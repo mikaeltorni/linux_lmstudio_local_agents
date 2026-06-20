@@ -1,0 +1,269 @@
+#!/usr/bin/env python3
+"""Model registry and selection/resolution logic for LM Studio local agents.
+
+Pure, side-effect-free helpers (all filesystem and ``lms`` I/O lives in the
+installer and the model selector) that turn the registry in
+``configs/lmstudio/model-profiles.json`` plus a set of install-time choices into a
+concrete plan:
+
+  * which models to install (download),
+  * which stay loaded at all times ("keep-on"),
+  * which model is the switchable "main" slot,
+  * and which environment variable switches the active model to each profile.
+
+At runtime the same logic resolves the active main model from the environment, so
+the per-model switch variables and the top-level ``main_env_var`` behave
+identically in tests and on the machine.
+
+Usage (CLI, consumed by the boot script):
+  lmstudio_models.py active-main --catalog model-profiles.json   # prints model_key
+  lmstudio_models.py keep-on     --catalog model-profiles.json   # prints model_keys
+  lmstudio_models.py default-plan --catalog model-profiles.json  # prints JSON plan
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from dataclasses import dataclass
+from pathlib import Path
+
+#: Environment values treated as "on" for switch variables.
+TRUTHY = {"1", "true", "yes", "y", "on"}
+
+#: Fallback top-level switch variable when the registry omits ``main_env_var``.
+DEFAULT_MAIN_ENV_VAR = "LMSTUDIO_MAIN_MODEL"
+
+
+def is_truthy(value: object) -> bool:
+    """Return whether an environment value should be treated as enabled.
+
+    Args:
+        value: Raw environment value (or ``None``).
+
+    Returns:
+        bool: True when the normalized value is one of :data:`TRUTHY`.
+    """
+    return str(value if value is not None else "").strip().lower() in TRUTHY
+
+
+def load_registry(path: str | Path) -> dict:
+    """Load and minimally validate the model registry JSON.
+
+    Args:
+        path: Path to ``model-profiles.json``.
+
+    Returns:
+        dict: The parsed registry.
+
+    Raises:
+        ValueError: When the file has no ``profiles`` list.
+    """
+    with Path(path).open(encoding="utf-8") as handle:
+        data = json.load(handle)
+    if not isinstance(data.get("profiles"), list):
+        raise ValueError("model registry must contain a 'profiles' list")
+    return data
+
+
+def profiles(registry: dict) -> list[dict]:
+    """Return the registry's profile list."""
+    return list(registry.get("profiles", []))
+
+
+def main_env_var(registry: dict) -> str:
+    """Return the top-level switch variable name (with a safe default)."""
+    return registry.get("main_env_var") or DEFAULT_MAIN_ENV_VAR
+
+
+def find_profile(registry: dict, identifier: str) -> dict | None:
+    """Resolve a profile by id, command, or model_key.
+
+    Args:
+        registry: The loaded registry.
+        identifier: An id, command alias, or model key.
+
+    Returns:
+        dict | None: The matching profile, or ``None``.
+    """
+    for profile in profiles(registry):
+        if identifier and identifier in (profile.get("id"), profile.get("command"), profile.get("model_key")):
+            return profile
+    return None
+
+
+@dataclass(frozen=True)
+class ModelPlan:
+    """A resolved set of install-time model choices.
+
+    Attributes:
+        install_ids: Profile ids selected for installation, in registry order.
+        keep_on_ids: Subset of ``install_ids`` kept loaded at all times.
+        main_id: The default active "main" model id (must be installed).
+        switch_env_vars: Mapping of installed model id to its switch variable.
+        main_env_var: The top-level variable that names the active main model.
+    """
+
+    install_ids: tuple[str, ...]
+    keep_on_ids: tuple[str, ...]
+    main_id: str
+    switch_env_vars: dict[str, str]
+    main_env_var: str
+
+    def keep_on_model_keys(self, registry: dict) -> list[str]:
+        """Return the model keys for the keep-on models, in registry order."""
+        return [find_profile(registry, pid)["model_key"] for pid in self.keep_on_ids]
+
+    def as_dict(self) -> dict:
+        """Return a JSON-serializable view of the plan."""
+        return {
+            "install_ids": list(self.install_ids),
+            "keep_on_ids": list(self.keep_on_ids),
+            "main_id": self.main_id,
+            "switch_env_vars": dict(self.switch_env_vars),
+            "main_env_var": self.main_env_var,
+        }
+
+
+def _ordered_ids(registry: dict, ids: set[str]) -> tuple[str, ...]:
+    """Return the requested ids in registry order (stable, de-duplicated)."""
+    return tuple(p["id"] for p in profiles(registry) if p["id"] in ids)
+
+
+def build_plan(
+    registry: dict,
+    *,
+    install_ids: list[str],
+    keep_on_ids: list[str],
+    main_id: str,
+    switch_env_vars: dict[str, str] | None = None,
+) -> ModelPlan:
+    """Build and validate a model plan from explicit choices.
+
+    Args:
+        registry: The loaded registry.
+        install_ids: Profile ids to install.
+        keep_on_ids: Profile ids to keep loaded (must be a subset of installs).
+        main_id: The default active main model id (must be installed).
+        switch_env_vars: Optional id->variable overrides; missing entries fall
+            back to each profile's ``switch_env_var``.
+
+    Returns:
+        ModelPlan: The validated plan.
+
+    Raises:
+        ValueError: On unknown ids, keep-on/main not installed, or empty install.
+    """
+    install_set = set(install_ids)
+    if not install_set:
+        raise ValueError("at least one model must be selected for installation")
+    for pid in install_set:
+        if find_profile(registry, pid) is None or find_profile(registry, pid)["id"] != pid:
+            raise ValueError(f"unknown model id: {pid}")
+    keep_on_set = set(keep_on_ids)
+    extra_keep = keep_on_set - install_set
+    if extra_keep:
+        raise ValueError(f"keep-on models not in install set: {sorted(extra_keep)}")
+    if main_id not in install_set:
+        raise ValueError(f"main model '{main_id}' is not in the install set")
+
+    resolved_switch: dict[str, str] = {}
+    for pid in _ordered_ids(registry, install_set):
+        override = (switch_env_vars or {}).get(pid)
+        resolved_switch[pid] = override or find_profile(registry, pid).get("switch_env_var") or ""
+
+    return ModelPlan(
+        install_ids=_ordered_ids(registry, install_set),
+        keep_on_ids=_ordered_ids(registry, keep_on_set),
+        main_id=main_id,
+        switch_env_vars=resolved_switch,
+        main_env_var=main_env_var(registry),
+    )
+
+
+def default_plan(registry: dict) -> ModelPlan:
+    """Build the default (non-interactive) plan from the registry's flags.
+
+    Installs every ``default_install`` profile, keeps on every
+    ``default_keep_on`` profile, and uses the single ``default_main`` profile as
+    the active main model.
+
+    Args:
+        registry: The loaded registry.
+
+    Returns:
+        ModelPlan: The default plan.
+
+    Raises:
+        ValueError: When zero or multiple profiles are marked ``default_main``.
+    """
+    install_ids = [p["id"] for p in profiles(registry) if p.get("default_install")]
+    keep_on_ids = [p["id"] for p in profiles(registry) if p.get("default_install") and p.get("default_keep_on")]
+    mains = [p["id"] for p in profiles(registry) if p.get("default_install") and p.get("default_main")]
+    if len(mains) != 1:
+        raise ValueError(f"exactly one installed profile must set default_main, found {mains}")
+    return build_plan(
+        registry,
+        install_ids=install_ids,
+        keep_on_ids=keep_on_ids,
+        main_id=mains[0],
+    )
+
+
+def resolve_active_main(registry: dict, plan: ModelPlan, env: dict[str, str] | None = None) -> dict:
+    """Resolve the active main model from the environment.
+
+    Precedence:
+      1. the first installed model (registry order) whose ``switch_env_var`` is
+         truthy in ``env``;
+      2. otherwise the model named by ``main_env_var`` when it is installed;
+      3. otherwise ``plan.main_id``.
+
+    Args:
+        registry: The loaded registry.
+        plan: A resolved plan.
+        env: Environment mapping; defaults to ``os.environ``.
+
+    Returns:
+        dict: The active main profile.
+    """
+    environ = os.environ if env is None else env
+    for pid in plan.install_ids:
+        var = plan.switch_env_vars.get(pid)
+        if var and is_truthy(environ.get(var)):
+            return find_profile(registry, pid)
+    named = (environ.get(plan.main_env_var) or "").strip()
+    if named:
+        candidate = find_profile(registry, named)
+        if candidate and candidate["id"] in plan.install_ids:
+            return candidate
+    return find_profile(registry, plan.main_id)
+
+
+def _plan_from_args(registry: dict, args: argparse.Namespace) -> ModelPlan:
+    """Return the default plan (CLI currently operates on the default layout)."""
+    return default_plan(registry)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI entry point used by the boot script and for inspection."""
+    parser = argparse.ArgumentParser(description="LM Studio local-agent model resolution.")
+    parser.add_argument("command", choices=["active-main", "keep-on", "default-plan"])
+    parser.add_argument("--catalog", type=Path, required=True)
+    args = parser.parse_args(argv)
+
+    registry = load_registry(args.catalog)
+    plan = _plan_from_args(registry, args)
+    if args.command == "active-main":
+        print(resolve_active_main(registry, plan)["model_key"])
+    elif args.command == "keep-on":
+        for key in plan.keep_on_model_keys(registry):
+            print(key)
+    else:
+        print(json.dumps(plan.as_dict(), indent=2, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
