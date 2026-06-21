@@ -80,8 +80,11 @@ lmla_install_assets() {
   run_as_target install -D -m 0755 "$LMLA_CONFIG_DIR/lmstudio-boot.sh" "$bin_dir/lmstudio-boot.sh"
 }
 
-# lmla_download_models — download every installable model in the registry,
-# verifying sha256 and resuming partial downloads. Honors LMSTUDIO_DOWNLOAD_MODELS=0.
+# lmla_download_models — download the installable models, verifying sha256 and
+# resuming partial downloads. Honors LMSTUDIO_DOWNLOAD_MODELS=0 (skip) and
+# LMSTUDIO_INSTALL_MODELS (a comma/space list of ids — e.g. a consumer that wants
+# only the qwen-coder model). The model selection is computed by the tested
+# lmstudio_models.py download-list command.
 lmla_download_models() {
   [ "${LMSTUDIO_DOWNLOAD_MODELS:-1}" = "1" ] || { msg "Skipping model downloads (LMSTUDIO_DOWNLOAD_MODELS=0)"; return 0; }
   local catalog="$LMLA_CONFIG_DIR/model-profiles.json"
@@ -97,14 +100,8 @@ lmla_download_models() {
     run_as_target curl -L --fail --retry 8 --retry-delay 3 --continue-at - "$download_url" --output "$partial"
     run_as_target bash -c 'printf "%s  %s\n" "$1" "$2" | sha256sum --check --status' _ "$sha256" "$partial"
     run_as_target mv "$partial" "$model_file"
-  done < <(python3 - "$catalog" <<'PY'
-import json, sys
-with open(sys.argv[1], encoding="utf-8") as handle:
-    for profile in json.load(handle)["profiles"]:
-        if profile.get("default_install"):
-            print("\t".join(str(profile.get(k, "")) for k in ("id", "download_url", "model_path", "sha256")))
-PY
-)
+  done < <(LMSTUDIO_INSTALL_MODELS="${LMSTUDIO_INSTALL_MODELS:-}" \
+    python3 "$LMLA_DIR/scripts/lmstudio_models.py" download-list --catalog "$catalog")
 }
 
 # lmla_install_switch_commands — generate a small command per model that switches

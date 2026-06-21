@@ -282,10 +282,60 @@ def boot_load_specs(registry: dict, plan: ModelPlan, env: dict[str, str] | None 
     return order
 
 
+def _parse_selection(raw: str | None) -> list[str]:
+    """Split a comma/space separated model-id selection string."""
+    return [token for token in (raw or "").replace(",", " ").split() if token]
+
+
+def installable_ids(registry: dict, selected: list[str] | None = None) -> list[str]:
+    """Return the model ids to install, in registry order.
+
+    Args:
+        registry: The loaded registry.
+        selected: Explicit subset of ids; when falsy, every ``default_install``
+            profile is used.
+
+    Returns:
+        list[str]: Ordered model ids.
+
+    Raises:
+        ValueError: When the selection names an unknown id.
+    """
+    known = {profile["id"] for profile in profiles(registry)}
+    if selected:
+        unknown = set(selected) - known
+        if unknown:
+            raise ValueError(f"unknown model ids: {sorted(unknown)}")
+        wanted = set(selected)
+        return [profile["id"] for profile in profiles(registry) if profile["id"] in wanted]
+    return [profile["id"] for profile in profiles(registry) if profile.get("default_install")]
+
+
+#: Fields the downloader needs per model, in order.
+DOWNLOAD_FIELDS = ("id", "download_url", "model_path", "sha256")
+
+
+def download_specs(registry: dict, selected: list[str] | None = None) -> list[dict]:
+    """Return download specs for installable models that have a download URL."""
+    specs = []
+    for pid in installable_ids(registry, selected):
+        profile = find_profile(registry, pid)
+        if profile.get("download_url"):
+            specs.append({field: profile.get(field, "") for field in DOWNLOAD_FIELDS})
+    return specs
+
+
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point used by the boot script and for inspection."""
+    """CLI entry point used by the boot script, the downloader, and inspection.
+
+    The ``download-list`` command honors the ``LMSTUDIO_INSTALL_MODELS``
+    environment variable (a comma/space separated list of model ids) so a
+    consumer like linux_programming_setup can request only the qwen-coder model.
+    """
     parser = argparse.ArgumentParser(description="LM Studio local-agent model resolution.")
-    parser.add_argument("command", choices=["active-main", "keep-on", "boot-load", "default-plan"])
+    parser.add_argument(
+        "command", choices=["active-main", "keep-on", "boot-load", "download-list", "default-plan"]
+    )
     parser.add_argument("--catalog", type=Path, required=True)
     args = parser.parse_args(argv)
 
@@ -299,6 +349,10 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "boot-load":
         for spec in boot_load_specs(registry, plan):
             print("\t".join(str(spec[field]) for field in BOOT_LOAD_FIELDS))
+    elif args.command == "download-list":
+        selected = _parse_selection(os.environ.get("LMSTUDIO_INSTALL_MODELS"))
+        for spec in download_specs(registry, selected):
+            print("\t".join(str(spec[field]) for field in DOWNLOAD_FIELDS))
     else:
         print(json.dumps(plan.as_dict(), indent=2, sort_keys=True))
     return 0

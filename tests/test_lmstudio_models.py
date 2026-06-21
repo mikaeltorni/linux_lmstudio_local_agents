@@ -223,3 +223,44 @@ def test_boot_load_specs_no_duplicate_when_main_is_keep_on(registry):
     )
     specs = lm.boot_load_specs(registry, plan, env={})
     assert [spec["model_key"] for spec in specs] == ["qwen2.5-coder-1.5b-instruct"]
+
+
+def test_installable_ids_default_is_all_default_install(registry):
+    """With no selection, every default_install model is installable."""
+    assert set(lm.installable_ids(registry)) == {"qwen-coder", "nex-n2-mini", "ornstein"}
+
+
+def test_installable_ids_honors_selection(registry):
+    """A selection installs only the named models (programming-setup case)."""
+    assert lm.installable_ids(registry, ["qwen-coder"]) == ["qwen-coder"]
+
+
+def test_installable_ids_rejects_unknown(registry):
+    """An unknown id in the selection raises."""
+    with pytest.raises(ValueError):
+        lm.installable_ids(registry, ["qwen-coder", "nope"])
+
+
+def test_download_specs_only_qwen_coder(registry):
+    """download_specs for the qwen-coder selection yields just that model."""
+    specs = lm.download_specs(registry, ["qwen-coder"])
+    assert [spec["id"] for spec in specs] == ["qwen-coder"]
+    assert specs[0]["model_path"] == "unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF/Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf"
+    assert set(lm.DOWNLOAD_FIELDS).issubset(specs[0].keys())
+
+
+def test_cli_download_list_honors_env(registry, capsys, monkeypatch):
+    """download-list restricts output to LMSTUDIO_INSTALL_MODELS when set."""
+    monkeypatch.setenv("LMSTUDIO_INSTALL_MODELS", "qwen-coder")
+    assert lm.main(["download-list", "--catalog", str(CATALOG)]) == 0
+    lines = [line for line in capsys.readouterr().out.splitlines() if line.strip()]
+    assert len(lines) == 1
+    assert lines[0].split("\t")[0] == "qwen-coder"
+
+
+def test_cli_download_list_default_lists_all(registry, capsys, monkeypatch):
+    """Without the env var, download-list lists every default_install model."""
+    monkeypatch.delenv("LMSTUDIO_INSTALL_MODELS", raising=False)
+    assert lm.main(["download-list", "--catalog", str(CATALOG)]) == 0
+    ids = {line.split("\t")[0] for line in capsys.readouterr().out.splitlines() if line.strip()}
+    assert ids == {"qwen-coder", "nex-n2-mini", "ornstein"}
