@@ -241,25 +241,64 @@ def resolve_active_main(registry: dict, plan: ModelPlan, env: dict[str, str] | N
     return find_profile(registry, plan.main_id)
 
 
-def _plan_from_args(registry: dict, args: argparse.Namespace) -> ModelPlan:
-    """Return the default plan (CLI currently operates on the default layout)."""
-    return default_plan(registry)
+#: Fields a boot loader needs to run ``lms load`` for one model, in order.
+BOOT_LOAD_FIELDS = ("model_key", "context_length", "gpu", "parallel", "ttl", "identifier")
+
+
+def boot_load_specs(registry: dict, plan: ModelPlan, env: dict[str, str] | None = None) -> list[dict]:
+    """Return the models the boot service should load, in load order.
+
+    Keep-on models come first (always loaded), then the resolved active main
+    model unless it is already a keep-on model. Each spec carries the ``lms
+    load`` flags from the profile.
+
+    Args:
+        registry: The loaded registry.
+        plan: A resolved plan.
+        env: Environment mapping; defaults to ``os.environ``.
+
+    Returns:
+        list[dict]: One dict per model with the :data:`BOOT_LOAD_FIELDS` keys.
+    """
+    order: list[dict] = []
+    seen: set[str] = set()
+
+    def add(profile: dict) -> None:
+        if profile["id"] in seen:
+            return
+        seen.add(profile["id"])
+        order.append({
+            "model_key": profile["model_key"],
+            "context_length": profile["context_length"],
+            "gpu": profile["gpu"],
+            "parallel": profile["parallel"],
+            "ttl": profile.get("ttl", 0),
+            "identifier": profile.get("identifier") or profile["model_key"],
+        })
+
+    for pid in plan.keep_on_ids:
+        add(find_profile(registry, pid))
+    add(resolve_active_main(registry, plan, env))
+    return order
 
 
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point used by the boot script and for inspection."""
     parser = argparse.ArgumentParser(description="LM Studio local-agent model resolution.")
-    parser.add_argument("command", choices=["active-main", "keep-on", "default-plan"])
+    parser.add_argument("command", choices=["active-main", "keep-on", "boot-load", "default-plan"])
     parser.add_argument("--catalog", type=Path, required=True)
     args = parser.parse_args(argv)
 
     registry = load_registry(args.catalog)
-    plan = _plan_from_args(registry, args)
+    plan = default_plan(registry)
     if args.command == "active-main":
         print(resolve_active_main(registry, plan)["model_key"])
     elif args.command == "keep-on":
         for key in plan.keep_on_model_keys(registry):
             print(key)
+    elif args.command == "boot-load":
+        for spec in boot_load_specs(registry, plan):
+            print("\t".join(str(spec[field]) for field in BOOT_LOAD_FIELDS))
     else:
         print(json.dumps(plan.as_dict(), indent=2, sort_keys=True))
     return 0

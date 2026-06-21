@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# defaults.sh — Single source of truth for LM Studio local-agent serving.
+#
+# Sourced by install.sh and lmstudio-boot.sh before writing configs, so changing
+# a setting here takes effect everywhere. Model-specific flags (context, gpu,
+# parallel) live per-model in model-profiles.json; these are the serving and
+# daemon defaults plus fallbacks for the boot script.
+
+# ── LM Studio application ─────────────────────────────────────────────────────
+LM_STUDIO_VERSION="0.4.16-2"
+
+# ── Serving / daemon behaviour ────────────────────────────────────────────────
+LMSTUDIO_DOWNLOAD_MODELS="1"          # set 0 only for offline/test installation
+LMSTUDIO_DAEMON_SETTLE_SECONDS="8"    # wait after lms daemon up before loading
+LMSTUDIO_ENABLE_LOCAL_SERVICE="1"
+LMSTUDIO_CUDA_VISIBLE_DEVICES=""
+LMSTUDIO_LLM_RUNTIME_ALIAS="llama.cpp-linux-x86_64-nvidia-cuda-avx2@2.20.1"
+LMSTUDIO_USER_SERVICE_NAME="lmstudio-serve.service"
+LMSTUDIO_SERVER_START_EXTRA=""
+
+# ── Fallback boot flags (used when a model profile omits them) ─────────────────
+LMSTUDIO_BOOT_CONTEXT="131072"
+LMSTUDIO_BOOT_GPU="max"
+LMSTUDIO_BOOT_PARALLEL="1"

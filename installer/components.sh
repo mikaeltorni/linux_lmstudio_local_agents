@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# components.sh - Component manifest for linux_lmstudio_local_agents.
+#
+# Maps each component to the function (defined in lib/lm_studio.sh, sourced by
+# scripts/install_standalone.sh) that installs it. The standalone installer
+# sources the lib and this manifest, then routes execution through component_main
+# from component_runtime.sh.
+#
+# Entry format: "id|label|default(on/off)|function".
+
+ISC_REPO_NAME="linux_lmstudio_local_agents"
+ISC_REPO_LABEL="LM Studio local agents"
+
+ISC_POSTFLIGHT="report_sudo_required"
+
+ISC_COMPONENTS=(
+  "lm_studio_app|LM Studio AppImage + CLI (requires root)|on|install_lm_studio_app"
+  "models|Download + register selected models (qwen-coder, Nex, Ornstein)|on|install_models"
+  "serve|serve.env, boot script, and lmstudio-serve.service user service|on|configure_serving"
+)

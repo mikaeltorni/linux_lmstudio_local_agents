@@ -196,3 +196,30 @@ def test_cli_default_plan_json(capsys):
     payload = json.loads(capsys.readouterr().out)
     assert payload["main_id"] == "nex-n2-mini"
     assert payload["keep_on_ids"] == ["qwen-coder"]
+
+
+def test_boot_load_specs_default_order(registry):
+    """Boot load order is keep-on models first, then the active main."""
+    plan = lm.default_plan(registry)
+    specs = lm.boot_load_specs(registry, plan, env={})
+    keys = [spec["model_key"] for spec in specs]
+    assert keys == ["qwen2.5-coder-1.5b-instruct", "nex-n2-mini"]
+    # Each spec carries the lms load flags.
+    assert set(lm.BOOT_LOAD_FIELDS).issubset(specs[0].keys())
+    assert specs[0]["gpu"] == "off" and specs[1]["gpu"] == "max"
+
+
+def test_boot_load_specs_follows_switch_var(registry):
+    """A switch var changes the main model loaded after the keep-on models."""
+    plan = lm.default_plan(registry)
+    specs = lm.boot_load_specs(registry, plan, env={"LMSTUDIO_USE_ORNSTEIN": "1"})
+    assert [spec["model_key"] for spec in specs] == ["qwen2.5-coder-1.5b-instruct", "ornstein3.6-35b-a3b"]
+
+
+def test_boot_load_specs_no_duplicate_when_main_is_keep_on(registry):
+    """If the active main is also a keep-on model it is not loaded twice."""
+    plan = lm.build_plan(
+        registry, install_ids=["qwen-coder"], keep_on_ids=["qwen-coder"], main_id="qwen-coder"
+    )
+    specs = lm.boot_load_specs(registry, plan, env={})
+    assert [spec["model_key"] for spec in specs] == ["qwen2.5-coder-1.5b-instruct"]
