@@ -20,48 +20,22 @@ USER_BUS="unix:path=${RUNTIME_DIR}/bus"
 # shellcheck source=/dev/null
 [ -f "$SCRIPT_DIR/configs/lmstudio/defaults.sh" ] && . "$SCRIPT_DIR/configs/lmstudio/defaults.sh"
 
-# Skipped root-only steps, reported at the end.
-declare -a LMLA_SUDO_NOTES=()
-
-# msg - print a highlighted progress line. Args: $* message text.
-msg() { printf '\n==> %s\n' "$*"; }
-
-# log - leveled diagnostic to stderr. Args: $1 level, $2 message.
+# log - leveled diagnostic to stderr. Args: $1 level, $2 message. Defined before
+# the shared helpers load so they emit through this repo's format.
 log() { printf '[%s] %s\n' "$1" "$2" >&2; }
 
-# need_cmd - return success when a command is available.
-need_cmd() { command -v "$1" >/dev/null 2>&1; }
-
-# note_sudo_required - record a root-only step that was skipped.
-note_sudo_required() { LMLA_SUDO_NOTES+=("$1"); msg "SKIP (requires sudo): $1"; }
-
-# report_sudo_required - print the collected skipped root steps (POSTFLIGHT).
-report_sudo_required() {
-  [ "${#LMLA_SUDO_NOTES[@]}" -gt 0 ] || return 0
-  msg "The following steps were skipped because they need root. Re-run with: sudo bash install.sh"
-  local note
-  for note in "${LMLA_SUDO_NOTES[@]}"; do printf '    - %s\n' "$note"; done
-}
-
-# run_as_target - run "$@" as the target user with a user session environment.
-run_as_target() {
-  if [ "$(id -un)" = "$TARGET_USER" ]; then
-    env HOME="$TARGET_HOME" USER="$TARGET_USER" LOGNAME="$TARGET_USER" \
-      XDG_RUNTIME_DIR="$RUNTIME_DIR" DBUS_SESSION_BUS_ADDRESS="$USER_BUS" "$@"
-  else
-    sudo -H -u "$TARGET_USER" env HOME="$TARGET_HOME" USER="$TARGET_USER" LOGNAME="$TARGET_USER" \
-      XDG_RUNTIME_DIR="$RUNTIME_DIR" DBUS_SESSION_BUS_ADDRESS="$USER_BUS" "$@"
-  fi
-}
-
-# apt_install - install apt packages when root; otherwise record a sudo note.
-apt_install() {
-  if [ "$(id -u)" -ne 0 ]; then
-    note_sudo_required "apt-get install $*"
-    return 0
-  fi
-  DEBIAN_FRONTEND=noninteractive apt-get install -y "$@"
-}
+# Load the shared installer framework + shared install-time helpers (msg,
+# need_cmd, run_as_target, apt_install, and the sudo-skip reporting used by the
+# report_sudo_required POSTFLIGHT) before sourcing lib/lm_studio.sh or running any
+# component. No vendored copy: resolve a sibling checkout or download on demand.
+for __isc_d in "${ISC_FUNCTIONS_DIR:-}" \
+               "$SCRIPT_DIR/../linux_installation_scripts_functions" \
+               "$HOME/projects/linux_installation_scripts_functions"; do
+  [ -n "$__isc_d" ] && [ -f "$__isc_d/component_loader.sh" ] && { source "$__isc_d/component_loader.sh"; break; }
+done
+declare -F isc_load_helpers >/dev/null 2>&1 || \
+  source <(curl -fsSL "https://raw.githubusercontent.com/mikaeltorni/linux_installation_scripts_functions/${ISC_FUNCTIONS_REF:-master}/component_loader.sh")
+isc_load_helpers
 
 # reload_systemd_daemon - reload the target user's systemd manager.
 reload_systemd_daemon() { run_as_target systemctl --user daemon-reload; }
@@ -72,14 +46,8 @@ enable_systemd_service() { run_as_target systemctl --user enable "$1"; }
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/lib/lm_studio.sh"
 
-# Load the shared installer component framework (sibling checkout or download).
-for __isc_d in "${ISC_FUNCTIONS_DIR:-}" \
-               "$SCRIPT_DIR/../linux_installation_scripts_functions" \
-               "$HOME/projects/linux_installation_scripts_functions"; do
-  [ -n "$__isc_d" ] && [ -f "$__isc_d/component_loader.sh" ] && { source "$__isc_d/component_loader.sh"; break; }
-done
-declare -F isc_activate_components >/dev/null 2>&1 || \
-  source <(curl -fsSL "https://raw.githubusercontent.com/mikaeltorni/linux_installation_scripts_functions/${ISC_FUNCTIONS_REF:-master}/component_loader.sh")
+# The framework was already resolved above (for isc_load_helpers); activate the
+# component runtime from the same checkout.
 isc_activate_components
 source "$SCRIPT_DIR/installer/components.sh"
 
