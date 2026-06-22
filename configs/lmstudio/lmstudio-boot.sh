@@ -11,11 +11,14 @@ set -euo pipefail
 CONFIG_HOME="${HOME}/.config/lmstudio-local-agents"
 CATALOG="${LMSTUDIO_MODEL_CATALOG:-$CONFIG_HOME/configs/lmstudio/model-profiles.json}"
 MODELS_PY="${LMSTUDIO_MODELS_PY:-$HOME/.local/bin/lmstudio-models}"
-export PATH="${HOME}/.lmstudio/bin:${HOME}/.local/bin:/usr/bin:/bin"
 
-# Canonical serving defaults (fallbacks when serve.env is absent).
+# Canonical serving defaults (fallbacks when serve.env is absent). Sourced before
+# PATH is built so LMSTUDIO_BIN_DIR (the single source of truth for the lms CLI
+# location) is honored everywhere below.
 # shellcheck source=/dev/null
 [ -f "$CONFIG_HOME/configs/lmstudio/defaults.sh" ] && . "$CONFIG_HOME/configs/lmstudio/defaults.sh"
+LMSTUDIO_BIN_DIR="${LMSTUDIO_BIN_DIR:-$HOME/.lmstudio/bin}"
+export PATH="${LMSTUDIO_BIN_DIR}:${HOME}/.local/bin:/usr/bin:/bin"
 # Optional editor autocomplete profile owned by linux_programming_setup.
 # shellcheck source=/dev/null
 [ -f "$HOME/.config/linux-programming-setup/lmstudio/autocomplete.env" ] && \
@@ -30,9 +33,9 @@ if [ -n "${LMSTUDIO_CUDA_VISIBLE_DEVICES:-}" ]; then
   export CUDA_VISIBLE_DEVICES="${LMSTUDIO_CUDA_VISIBLE_DEVICES}"
 fi
 
-LMS_CLI="${HOME}/.lmstudio/bin/lms"
+LMS_CLI="${LMSTUDIO_BIN_DIR}/lms"
 if [ ! -x "$LMS_CLI" ]; then
-  echo "lms not found in PATH (expected ${HOME}/.lmstudio/bin/lms)" >&2
+  echo "lms not found in PATH (expected ${LMS_CLI})" >&2
   exit 1
 fi
 if [ -n "${LMSTUDIO_LLM_RUNTIME_ALIAS:-}" ]; then

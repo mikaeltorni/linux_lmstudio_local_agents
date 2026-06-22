@@ -9,6 +9,12 @@
 # ── LM Studio application ─────────────────────────────────────────────────────
 LM_STUDIO_VERSION="0.4.16-2"
 
+# Filesystem layout — single source of truth for where the LM Studio CLI (`lms`)
+# is installed. The boot script and any consumer that bakes the path into a
+# generated script (e.g. agent_command_center's lmstudio-log-runner) resolve this
+# instead of hardcoding "~/.lmstudio/bin". Overridable for non-default installs.
+LMSTUDIO_BIN_DIR="${LMSTUDIO_BIN_DIR:-$HOME/.lmstudio/bin}"
+
 # ── Serving / daemon behaviour ────────────────────────────────────────────────
 LMSTUDIO_DOWNLOAD_MODELS="1"          # set 0 only for offline/test installation
 LMSTUDIO_DAEMON_SETTLE_SECONDS="8"    # wait after lms daemon up before loading
