@@ -18,6 +18,7 @@ LMSTUDIO_BIN_DIR="${LMSTUDIO_BIN_DIR:-$HOME/.lmstudio/bin}"
 # ── Serving / daemon behaviour ────────────────────────────────────────────────
 LMSTUDIO_DOWNLOAD_MODELS="1"          # set 0 only for offline/test installation
 LMSTUDIO_DAEMON_SETTLE_SECONDS="8"    # wait after lms daemon up before loading
+LMSTUDIO_DAEMON_MAX_ATTEMPTS="12"     # daemon-up readiness polls before giving up (cold boot is slow)
 LMSTUDIO_ENABLE_LOCAL_SERVICE="1"
 LMSTUDIO_CUDA_VISIBLE_DEVICES=""
 LMSTUDIO_LLM_RUNTIME_ALIAS="llama.cpp-linux-x86_64-nvidia-cuda-avx2@2.20.1"

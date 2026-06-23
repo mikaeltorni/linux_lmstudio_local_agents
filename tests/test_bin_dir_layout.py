@@ -41,6 +41,32 @@ def test_boot_script_restores_persisted_selection():
     assert "env | grep -Eq '^LMSTUDIO_USE_[A-Z0-9_]+=.+$'" in source
 
 
+def test_boot_script_recovers_unauthable_daemon():
+    """Cold boot can leave a daemon whose passkey the CLI rejects; recover by
+    re-killing and bringing it back, not by polling a stuck daemon once."""
+    source = BOOT.read_text(encoding="utf-8")
+    # Configurable attempt budget with a sane default.
+    assert 'LMSTUDIO_DAEMON_MAX_ATTEMPTS="${LMSTUDIO_DAEMON_MAX_ATTEMPTS:-12}"' in source
+    # The recovery loops over attempts instead of hard-failing on the first miss.
+    assert 'for attempt in $(seq 1 "${LMSTUDIO_DAEMON_MAX_ATTEMPTS}"); do' in source
+    # Each attempt checks authentication first (leave a healthy daemon alone) and
+    # tears the daemon down before bringing it back up when auth fails.
+    assert 'if "$LMS_CLI" ps --json >/dev/null 2>&1; then' in source
+    assert "pkill -u \"$(id -un)\" -f '(^|/)llmster( |$)'" in source
+    assert '"$LMS_CLI" daemon up' in source
+    # The passkey files must never be deleted — the CLI reads them and the daemon
+    # regenerates them; removing them yields ENOENT instead of a fresh key.
+    import re
+    assert not re.search(r"\brm\b[^\n]*lms-key", source)
+
+
+def test_defaults_define_daemon_max_attempts():
+    """defaults.sh and the generated serve.env carry the daemon retry budget."""
+    assert 'LMSTUDIO_DAEMON_MAX_ATTEMPTS="12"' in DEFAULTS.read_text(encoding="utf-8")
+    lib = (ROOT / "lib" / "lm_studio.sh").read_text(encoding="utf-8")
+    assert 'LMSTUDIO_DAEMON_MAX_ATTEMPTS="${LMSTUDIO_DAEMON_MAX_ATTEMPTS:-12}"' in lib
+
+
 def test_python_logging_helper_is_installed_with_selector():
     """The installed selector has its centralized logging dependency beside it."""
     source = (ROOT / "lib" / "lm_studio.sh").read_text(encoding="utf-8")

@@ -40,6 +40,10 @@ if [ -z "${LMSTUDIO_MAIN_MODEL:-}" ] && [ -f "$SELECTED_MODEL_FILE" ]; then
 fi
 
 LMSTUDIO_DAEMON_SETTLE_SECONDS="${LMSTUDIO_DAEMON_SETTLE_SECONDS:-8}"
+# Number of daemon-up + readiness polls before giving up. A cold machine boot is
+# slower than a warm `systemctl --user restart`, so a single settle is not enough
+# for the headless daemon to answer `lms ps`; retry instead of hard-failing.
+LMSTUDIO_DAEMON_MAX_ATTEMPTS="${LMSTUDIO_DAEMON_MAX_ATTEMPTS:-12}"
 if [ -n "${LMSTUDIO_CUDA_VISIBLE_DEVICES:-}" ]; then
   export CUDA_VISIBLE_DEVICES="${LMSTUDIO_CUDA_VISIBLE_DEVICES}"
 fi
@@ -53,15 +57,37 @@ if [ -n "${LMSTUDIO_LLM_RUNTIME_ALIAS:-}" ]; then
   "$LMS_CLI" runtime select "${LMSTUDIO_LLM_RUNTIME_ALIAS}" >/dev/null 2>&1 || true
 fi
 
+# Bring the headless daemon to a state where the `lms` CLI can authenticate to
+# it. On a cold machine boot the daemon frequently comes up with a CLI passkey
+# (lms-key-2) that does not match what `lms` reads, so every call fails with
+# "Invalid passkey" and never self-heals — the symptom behind models not loading
+# after a reboot. The daemon auto-respawns when killed and rewrites a fresh,
+# matching passkey, so the reliable recovery is to tear it down and let it come
+# back, retrying until `lms ps` authenticates. Notes:
+#   * Check auth first so a healthy daemon is left untouched (no needless churn).
+#   * `lms daemon up` is a no-op against an already-running (but unauthable)
+#     daemon, so we must kill before bringing it up — polling alone cannot fix a
+#     passkey mismatch.
+#   * Never delete lms-key*: the CLI reads those files and the daemon (not
+#     `lms daemon up`) regenerates them; removing them yields ENOENT instead.
 restart_lmstudio_daemon() {
-  pkill -u "$(id -un)" -f '(^|/)llmster( |$)' || true
-  sleep 2
-  "$LMS_CLI" daemon up >/dev/null 2>&1 || true
-  sleep "${LMSTUDIO_DAEMON_SETTLE_SECONDS}"
-  if ! "$LMS_CLI" ps --json >/dev/null 2>&1; then
-    echo "[boot] LM Studio headless daemon failed to start" >&2
-    exit 1
+  local attempt
+  for attempt in $(seq 1 "${LMSTUDIO_DAEMON_MAX_ATTEMPTS}"); do
+    if "$LMS_CLI" ps --json >/dev/null 2>&1; then
+      return 0
+    fi
+    echo "[boot] LM Studio headless daemon not ready yet (attempt ${attempt}/${LMSTUDIO_DAEMON_MAX_ATTEMPTS}); restarting" >&2
+    "$LMS_CLI" server stop >/dev/null 2>&1 || true
+    pkill -u "$(id -un)" -f '(^|/)llmster( |$)' || true
+    sleep 2
+    "$LMS_CLI" daemon up >/dev/null 2>&1 || true
+    sleep "${LMSTUDIO_DAEMON_SETTLE_SECONDS}"
+  done
+  if "$LMS_CLI" ps --json >/dev/null 2>&1; then
+    return 0
   fi
+  echo "[boot] LM Studio headless daemon failed to start after ${LMSTUDIO_DAEMON_MAX_ATTEMPTS} attempts" >&2
+  exit 1
 }
 
 start_lmstudio_server() {
