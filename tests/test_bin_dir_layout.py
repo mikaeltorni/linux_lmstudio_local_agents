@@ -33,6 +33,14 @@ def test_boot_script_uses_bin_dir_variable():
     assert 'LMS_CLI="${HOME}/.lmstudio/bin/lms"' not in source
 
 
+def test_boot_script_restores_persisted_selection():
+    """Boot honors the last lmstudio-model selection when no env switch is set."""
+    source = BOOT.read_text(encoding="utf-8")
+    assert 'SELECTED_MODEL_FILE="${HOME}/.config/lm-studio/selected-model"' in source
+    assert 'LMSTUDIO_MAIN_MODEL="$(tr -d \'[:space:]\' < "$SELECTED_MODEL_FILE")"' in source
+    assert "env | grep -Eq '^LMSTUDIO_USE_[A-Z0-9_]+=.+$'" in source
+
+
 def test_python_logging_helper_is_installed_with_selector():
     """The installed selector has its centralized logging dependency beside it."""
     source = (ROOT / "lib" / "lm_studio.sh").read_text(encoding="utf-8")

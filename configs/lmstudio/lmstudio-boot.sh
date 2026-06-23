@@ -27,6 +27,17 @@ export PATH="${LMSTUDIO_BIN_DIR}:${HOME}/.local/bin:/usr/bin:/bin"
 ENV_FILE="${HOME}/.config/lm-studio/serve.env"
 # shellcheck source=/dev/null
 [ -f "$ENV_FILE" ] && . "$ENV_FILE"
+SELECTED_MODEL_FILE="${HOME}/.config/lm-studio/selected-model"
+
+# Restore the last runtime selection on boot, unless serve.env explicitly set a
+# switch variable or LMSTUDIO_MAIN_MODEL. lmstudio-model persists profile ids,
+# command aliases, or model keys; lmstudio-models resolves all of those.
+if [ -z "${LMSTUDIO_MAIN_MODEL:-}" ] && [ -f "$SELECTED_MODEL_FILE" ]; then
+  if ! env | grep -Eq '^LMSTUDIO_USE_[A-Z0-9_]+=.+$'; then
+    LMSTUDIO_MAIN_MODEL="$(tr -d '[:space:]' < "$SELECTED_MODEL_FILE")"
+    export LMSTUDIO_MAIN_MODEL
+  fi
+fi
 
 LMSTUDIO_DAEMON_SETTLE_SECONDS="${LMSTUDIO_DAEMON_SETTLE_SECONDS:-8}"
 if [ -n "${LMSTUDIO_CUDA_VISIBLE_DEVICES:-}" ]; then
