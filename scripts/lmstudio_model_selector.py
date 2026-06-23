@@ -11,23 +11,14 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import os
 from pathlib import Path
 import subprocess
 import sys
 
-logger = logging.getLogger("lmstudio_model_selector")
+from lmla_logging_utils import get_logger, log_call
 
-
-def log(level: str, message: str) -> None:
-    """Record a leveled model-selector diagnostic.
-
-    Args:
-        level: "info", "warn", or "error" (unknown levels fall back to INFO).
-        message: Message text.
-    """
-    logger.log({"warn": logging.WARNING, "error": logging.ERROR}.get(level, logging.INFO), message)
+LOGGER = get_logger("lmstudio_model_selector", "lmstudio_model_selector.log")
 
 
 def load_profiles(path: Path) -> list[dict]:
@@ -91,13 +82,17 @@ def resolve_load_key(profile: dict, lms: Path) -> str:
                 if model_matches_profile(item, profile):
                     return item.get("modelKey") or profile["model_key"]
         except json.JSONDecodeError:
-            pass
+            LOGGER.warning("Could not parse `lms ls --json`; using configured model key.")
+    elif listed.stderr.strip():
+        LOGGER.warning("`lms ls --json` failed: %s", listed.stderr.strip())
     return profile["model_key"]
 
 
+@log_call(LOGGER)
 def load_model(profile: dict, lms: Path) -> subprocess.CompletedProcess[str]:
     """Load one profile and return the CLI result."""
     load_key = resolve_load_key(profile, lms)
+    LOGGER.info("Loading LM Studio model: %s", profile_identifier(profile))
     args = [
         "load",
         "-c",
@@ -126,7 +121,10 @@ def switch_model(profile: dict, profiles: list[dict], lms: Path) -> None:
     Keep-on profiles (``default_keep_on``) are left loaded so editor autocomplete
     and other always-on models stay available while the main slot changes.
     """
-    run_lms(lms, "server", "start", check=False)
+    LOGGER.info("Starting LM Studio server if needed.")
+    server_result = run_lms(lms, "server", "start", check=False)
+    if server_result.returncode and server_result.stderr.strip():
+        LOGGER.warning("`lms server start` returned non-zero: %s", server_result.stderr.strip())
     loaded = run_lms(lms, "ps", "--json", check=False)
     previous = None
     candidates = switchable_profiles(profiles)
@@ -145,7 +143,9 @@ def switch_model(profile: dict, profiles: list[dict], lms: Path) -> None:
                 None,
             )
         except json.JSONDecodeError:
-            pass
+            LOGGER.warning("Could not parse `lms ps --json`; previous model restore will be unavailable.")
+    elif loaded.stderr.strip():
+        LOGGER.warning("`lms ps --json` failed: %s", loaded.stderr.strip())
 
     for candidate in candidates:
         if candidate["id"] == profile["id"]:
@@ -153,15 +153,20 @@ def switch_model(profile: dict, profiles: list[dict], lms: Path) -> None:
         unload_keys = {candidate["model_key"], profile_identifier(candidate)}
         unload_keys.add(resolve_load_key(candidate, lms))
         for unload_key in unload_keys:
-            run_lms(lms, "unload", unload_key, check=False)
+            result = run_lms(lms, "unload", unload_key, check=False)
+            if result.returncode and result.stderr.strip():
+                LOGGER.warning("Failed to unload %s: %s", unload_key, result.stderr.strip())
 
     result = load_model(profile, lms)
     if result.returncode:
         sys.stderr.write(result.stderr or result.stdout)
         if previous and previous["id"] != profile["id"]:
-            log("warn", f"Restoring previous model: {profile_identifier(previous)}")
-            load_model(previous, lms)
+            LOGGER.warning("Restoring previous model: %s", profile_identifier(previous))
+            restore_result = load_model(previous, lms)
+            if restore_result.returncode:
+                LOGGER.error("Failed to restore previous model: %s", profile_identifier(previous))
         raise RuntimeError(f"Failed to load LM Studio model: {profile_identifier(profile)}")
+    LOGGER.info("Active LM Studio model: %s", profile_identifier(profile))
 
 
 def default_catalog() -> Path:
@@ -171,7 +176,6 @@ def default_catalog() -> Path:
 
 def main() -> int:
     """Run the command-line entry point."""
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
     parser = argparse.ArgumentParser()
     parser.add_argument("profile", nargs="?", help="profile id or command")
     parser.add_argument("--restore", action="store_true", help="restore the persisted profile")
@@ -201,5 +205,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except (OSError, ValueError, RuntimeError) as exc:
-        log("error", f"lmstudio-model: {exc}")
+        LOGGER.error("lmstudio-model: %s", exc)
         raise SystemExit(1)

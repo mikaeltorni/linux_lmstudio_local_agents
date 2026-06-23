@@ -10,14 +10,17 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import logging
 import sys
 from pathlib import Path
 import tempfile
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
+SCRIPTS_DIR = ROOT_DIR / "scripts"
+sys.path.insert(0, str(SCRIPTS_DIR))
 SPEC = importlib.util.spec_from_file_location(
-    "lmstudio_model_selector", ROOT_DIR / "scripts/lmstudio_model_selector.py"
+    "lmstudio_model_selector", SCRIPTS_DIR / "lmstudio_model_selector.py"
 )
 MOD = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
@@ -139,3 +142,46 @@ def test_load_model_resolves_local_model_key_from_catalog_path(monkeypatch):
     assert "--identifier" in load_call
     assert load_call[load_call.index("--identifier") + 1] == "ornstein3.6-35b-a3b"
     assert "ornstein3.6-35b-a3b-q3_k_m" in load_call
+
+
+def test_switch_model_logs_state_transitions(monkeypatch, caplog):
+    """Switching records the externally visible workloop transitions."""
+    profiles = MOD.load_profiles(CATALOG)
+
+    def fake_run(_lms, *args, check=True):
+        """Stub all lms commands as successful."""
+        if args[:2] == ("ls", "--json"):
+            return MOD.subprocess.CompletedProcess(args, 0, "[]", "")
+        if args[:2] == ("ps", "--json"):
+            return MOD.subprocess.CompletedProcess(args, 0, "[]", "")
+        return MOD.subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(MOD, "run_lms", fake_run)
+    monkeypatch.setattr(MOD.LOGGER, "propagate", True)
+    with caplog.at_level(logging.INFO, logger="lmstudio_model_selector"):
+        MOD.switch_model(_profile(profiles, "ornstein"), profiles, Path("/fake/lms"))
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert "Starting LM Studio server if needed." in messages
+    assert "Loading LM Studio model: ornstein3.6-35b-a3b" in messages
+    assert "Active LM Studio model: ornstein3.6-35b-a3b" in messages
+
+
+def test_json_parse_failures_are_logged(monkeypatch, caplog):
+    """Invalid lms JSON is observable while preserving fallback behavior."""
+    profiles = MOD.load_profiles(CATALOG)
+
+    def fake_run(_lms, *args, check=True):
+        """Return invalid JSON for lms inventory commands."""
+        if args[:2] in {("ls", "--json"), ("ps", "--json")}:
+            return MOD.subprocess.CompletedProcess(args, 0, "not-json", "")
+        return MOD.subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(MOD, "run_lms", fake_run)
+    monkeypatch.setattr(MOD.LOGGER, "propagate", True)
+    with caplog.at_level(logging.WARNING, logger="lmstudio_model_selector"):
+        MOD.switch_model(_profile(profiles, "ornstein"), profiles, Path("/fake/lms"))
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert "Could not parse `lms ps --json`; previous model restore will be unavailable." in messages
+    assert "Could not parse `lms ls --json`; using configured model key." in messages
