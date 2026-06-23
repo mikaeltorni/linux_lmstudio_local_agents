@@ -75,6 +75,7 @@ lmla_install_assets() {
   for asset in model-profiles.json defaults.sh defaults.py; do
     run_as_target install -D -m 0644 "$LMLA_CONFIG_DIR/$asset" "$config_dir/$asset"
   done
+  run_as_target install -D -m 0644 "$LMLA_DIR/scripts/lmla_logging_utils.py" "$bin_dir/lmla_logging_utils.py"
   run_as_target install -D -m 0755 "$LMLA_DIR/scripts/lmstudio_models.py" "$bin_dir/lmstudio-models"
   run_as_target install -D -m 0755 "$LMLA_DIR/scripts/lmstudio_model_selector.py" "$bin_dir/lmstudio-model"
   run_as_target install -D -m 0755 "$LMLA_CONFIG_DIR/lmstudio-boot.sh" "$bin_dir/lmstudio-boot.sh"

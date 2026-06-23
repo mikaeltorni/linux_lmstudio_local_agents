@@ -15,6 +15,7 @@ TARGET_UID="$(id -u "$TARGET_USER")"
 TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
 RUNTIME_DIR="/run/user/${TARGET_UID}"
 USER_BUS="unix:path=${RUNTIME_DIR}/bus"
+DISPLAY_VAL="${DISPLAY:-:0}"
 
 # Source canonical serving defaults so LM_STUDIO_VERSION etc. are available.
 # shellcheck source=/dev/null
