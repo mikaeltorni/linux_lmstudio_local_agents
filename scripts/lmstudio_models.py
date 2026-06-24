@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -201,6 +202,10 @@ def default_plan(registry: dict) -> ModelPlan:
     install_ids = [p["id"] for p in profiles(registry) if p.get("default_install")]
     keep_on_ids = [p["id"] for p in profiles(registry) if p.get("default_install") and p.get("default_keep_on")]
     mains = [p["id"] for p in profiles(registry) if p.get("default_install") and p.get("default_main")]
+    # A catalog with nothing installed (the "core only" selection) has an empty
+    # plan: no models to download, keep on, or boot-load.
+    if not install_ids:
+        return ModelPlan((), (), "", {}, main_env_var(registry))
     if len(mains) != 1:
         raise ValueError(f"exactly one installed profile must set default_main, found {mains}")
     return build_plan(
@@ -260,6 +265,8 @@ def boot_load_specs(registry: dict, plan: ModelPlan, env: dict[str, str] | None 
     Returns:
         list[dict]: One dict per model with the :data:`BOOT_LOAD_FIELDS` keys.
     """
+    if not plan.install_ids:
+        return []
     order: list[dict] = []
     seen: set[str] = set()
 
@@ -325,6 +332,192 @@ def download_specs(registry: dict, selected: list[str] | None = None) -> list[di
     return specs
 
 
+def slugify_id(value: str) -> str:
+    """Return a filesystem/command-safe lowercase slug for a custom model id.
+
+    Args:
+        value: Free-text model name typed by the user.
+
+    Returns:
+        str: Lowercased value with runs of non-alphanumeric characters collapsed
+        to single dashes and leading/trailing dashes stripped.
+    """
+    import re
+
+    slug = re.sub(r"[^a-z0-9]+", "-", str(value).strip().lower()).strip("-")
+    return slug
+
+
+def switch_env_var_for(model_id: str) -> str:
+    """Return the per-model switch variable name for a model id.
+
+    Args:
+        model_id: A profile id (typically a slug from :func:`slugify_id`).
+
+    Returns:
+        str: ``LMSTUDIO_USE_<UPPER>`` with non-alphanumerics turned into ``_``.
+    """
+    import re
+
+    suffix = re.sub(r"[^A-Z0-9]+", "_", str(model_id).upper()).strip("_")
+    return f"LMSTUDIO_USE_{suffix}"
+
+
+#: Per-model serving defaults applied to a user-added custom model.
+CUSTOM_PROFILE_DEFAULTS = {
+    "gpu": "max",
+    "context_length": 131072,
+    "parallel": 1,
+    "ttl": 0,
+    "identifier": "",
+    "sha256": "",
+    "yes": True,
+}
+
+
+def normalize_custom_profile(spec: dict) -> dict:
+    """Turn user-entered fields into a complete model profile.
+
+    A custom model only requires a name/id, a ``model_key`` (the id ``lms load``
+    uses), and a ``download_url``. Everything else is derived or defaulted so the
+    profile behaves exactly like a shipped one (switch variable, command alias,
+    download path, serving flags).
+
+    Args:
+        spec: Partial profile with at least ``id`` (or ``name``) and
+            ``model_key``. ``download_url`` is required to actually download.
+
+    Returns:
+        dict: A fully populated profile, marked ``default_install`` (a user who
+        types a model in wants it installed). Keep-on/main flags are decided by
+        :func:`apply_install_selection`.
+
+    Raises:
+        ValueError: When no id/name or model_key can be determined.
+    """
+    raw_id = spec.get("id") or spec.get("name") or ""
+    model_id = slugify_id(raw_id)
+    if not model_id:
+        raise ValueError("a custom model needs a name")
+    model_key = (spec.get("model_key") or "").strip() or model_id
+    download_url = (spec.get("download_url") or "").strip()
+    model_path = (spec.get("model_path") or "").strip()
+    if not model_path:
+        if download_url:
+            base = download_url.split("?", 1)[0].rstrip("/").rsplit("/", 1)[-1]
+            model_path = f"{model_id}/{base}" if base else f"{model_id}.gguf"
+        else:
+            model_path = f"{model_id}.gguf"
+
+    profile = dict(CUSTOM_PROFILE_DEFAULTS)
+    profile.update({
+        "id": model_id,
+        "command": spec.get("command") or slugify_id(raw_id).replace("-", ""),
+        "description": (spec.get("description") or spec.get("name") or raw_id or model_id),
+        "model_key": model_key,
+        "download_url": download_url,
+        "model_path": model_path,
+        "switch_env_var": spec.get("switch_env_var") or switch_env_var_for(model_id),
+        "default_install": True,
+        "default_keep_on": False,
+        "default_main": False,
+        "custom": True,
+    })
+    # Allow explicit serving-flag overrides from the spec.
+    for key in ("gpu", "context_length", "parallel", "ttl", "identifier", "sha256"):
+        if spec.get(key) not in (None, ""):
+            profile[key] = spec[key]
+    return profile
+
+
+def apply_install_selection(
+    registry: dict,
+    *,
+    selected_ids: list[str],
+    autostart_ids: list[str],
+    main_id: str | None = None,
+    custom_profiles: list[dict] | None = None,
+) -> dict:
+    """Return a copy of the registry rewritten to encode an install selection.
+
+    The returned registry is a drop-in for :func:`default_plan`: its
+    ``default_install`` / ``default_keep_on`` / ``default_main`` flags reflect
+    exactly the user's choices, so every downstream consumer (download list,
+    boot-load, switch commands) follows the selection with no other changes.
+
+    Autostart maps to "loaded at boot": autostarted models become keep-on models
+    and the resolved main model is always loaded too, so a model that is selected
+    but not autostarted is installed and runtime-switchable yet not loaded at
+    boot.
+
+    Args:
+        registry: The base registry (shipped catalog).
+        selected_ids: Profile ids to install. Must be non-empty.
+        autostart_ids: Subset of ``selected_ids`` to load at boot.
+        main_id: Optional explicit default active model; must be selected. When
+            omitted it is derived from the registry's ``default_main`` flag among
+            selected models, else the first autostarted model, else the first
+            selected model.
+        custom_profiles: User-added profiles (already normalized or raw specs)
+            appended to the registry before applying the selection.
+
+    Returns:
+        dict: A new registry dict with updated profiles and flags.
+
+    Raises:
+        ValueError: When the selection is empty, names an unknown id, or
+            autostarts a model that is not selected.
+    """
+    import copy
+
+    new_registry = copy.deepcopy(registry)
+    base_profiles = new_registry.setdefault("profiles", [])
+    known = {p["id"] for p in base_profiles}
+    for spec in custom_profiles or []:
+        profile = spec if spec.get("custom") else normalize_custom_profile(spec)
+        if profile["id"] in known:
+            # Replace an existing profile of the same id (re-adding/editing).
+            base_profiles[:] = [p for p in base_profiles if p["id"] != profile["id"]]
+        base_profiles.append(profile)
+        known.add(profile["id"])
+
+    selected = [pid for pid in selected_ids]
+    unknown = [pid for pid in selected if pid not in known]
+    if unknown:
+        raise ValueError(f"unknown model ids: {sorted(set(unknown))}")
+    selected_set = set(selected)
+    autostart_set = set(autostart_ids)
+    extra = autostart_set - selected_set
+    if extra:
+        raise ValueError(f"autostart models not selected for install: {sorted(extra)}")
+
+    order = [p["id"] for p in base_profiles]
+    autostart_ordered = [pid for pid in order if pid in autostart_set]
+
+    # An empty selection is the "core only" choice: no installs, no main, no
+    # boot models. apply_install_selection stays total so a user who picks zero
+    # models never crashes the installer.
+    resolved_main = None
+    if selected_set:
+        if main_id and main_id in selected_set:
+            resolved_main = main_id
+        if resolved_main is None:
+            for p in base_profiles:
+                if p["id"] in selected_set and p.get("default_main"):
+                    resolved_main = p["id"]
+                    break
+        if resolved_main is None:
+            resolved_main = autostart_ordered[0] if autostart_ordered else next(pid for pid in order if pid in selected_set)
+
+    keep_on = {pid for pid in autostart_set if pid != resolved_main}
+    for profile in base_profiles:
+        pid = profile["id"]
+        profile["default_install"] = pid in selected_set
+        profile["default_keep_on"] = pid in keep_on
+        profile["default_main"] = pid == resolved_main
+    return new_registry
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point used by the boot script, the downloader, and inspection.
 
@@ -334,15 +527,36 @@ def main(argv: list[str] | None = None) -> int:
     """
     parser = argparse.ArgumentParser(description="LM Studio local-agent model resolution.")
     parser.add_argument(
-        "command", choices=["active-main", "keep-on", "boot-load", "download-list", "default-plan"]
+        "command",
+        choices=["active-main", "keep-on", "boot-load", "download-list", "default-plan", "apply-selection"],
     )
     parser.add_argument("--catalog", type=Path, required=True)
+    parser.add_argument(
+        "--selection",
+        type=Path,
+        help="apply-selection: JSON file with selected_ids/autostart_ids/main_id/custom_profiles.",
+    )
     args = parser.parse_args(argv)
 
     registry = load_registry(args.catalog)
+    if args.command == "apply-selection":
+        raw = (args.selection.read_text(encoding="utf-8") if args.selection
+               else sys.stdin.read())
+        choice = json.loads(raw or "{}")
+        customized = apply_install_selection(
+            registry,
+            selected_ids=choice.get("selected_ids", []),
+            autostart_ids=choice.get("autostart_ids", []),
+            main_id=choice.get("main_id"),
+            custom_profiles=choice.get("custom_profiles", []),
+        )
+        print(json.dumps(customized, indent=2))
+        return 0
+
     plan = default_plan(registry)
     if args.command == "active-main":
-        print(resolve_active_main(registry, plan)["model_key"])
+        if plan.install_ids:
+            print(resolve_active_main(registry, plan)["model_key"])
     elif args.command == "keep-on":
         for key in plan.keep_on_model_keys(registry):
             print(key)

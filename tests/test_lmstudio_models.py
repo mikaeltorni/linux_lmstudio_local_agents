@@ -264,3 +264,137 @@ def test_cli_download_list_default_lists_all(registry, capsys, monkeypatch):
     assert lm.main(["download-list", "--catalog", str(CATALOG)]) == 0
     ids = {line.split("\t")[0] for line in capsys.readouterr().out.splitlines() if line.strip()}
     assert ids == {"qwen-coder", "nex-n2-mini", "ornstein"}
+
+
+# --- Custom model normalization -------------------------------------------------
+
+
+def test_slugify_and_switch_env_var():
+    """Free-text names become safe slugs and switch variables."""
+    assert lm.slugify_id("My Cool Model 7B!") == "my-cool-model-7b"
+    assert lm.switch_env_var_for("my-cool-model-7b") == "LMSTUDIO_USE_MY_COOL_MODEL_7B"
+
+
+def test_normalize_custom_profile_derives_fields():
+    """A minimal custom spec fills in command, switch var, and download path."""
+    profile = lm.normalize_custom_profile({
+        "name": "Tiny Llama 1B",
+        "model_key": "tinyllama-1b",
+        "download_url": "https://example.com/repo/TinyLlama-1B.gguf?download=true",
+    })
+    assert profile["id"] == "tiny-llama-1b"
+    assert profile["switch_env_var"] == "LMSTUDIO_USE_TINY_LLAMA_1B"
+    assert profile["model_path"] == "tiny-llama-1b/TinyLlama-1B.gguf"
+    assert profile["default_install"] is True
+    assert profile["custom"] is True
+    # Serving defaults are applied so the profile behaves like a shipped one.
+    assert profile["gpu"] == "max" and profile["context_length"] == 131072
+    assert profile["sha256"] == ""
+
+
+def test_normalize_custom_profile_requires_name():
+    """A custom model with no usable name is rejected."""
+    with pytest.raises(ValueError):
+        lm.normalize_custom_profile({"model_key": "x"})
+
+
+# --- apply_install_selection ----------------------------------------------------
+
+
+def test_apply_selection_default_layout_roundtrips(registry):
+    """Selecting all three with the shipped autostart reproduces default_plan."""
+    customized = lm.apply_install_selection(
+        registry,
+        selected_ids=["qwen-coder", "nex-n2-mini", "ornstein"],
+        autostart_ids=["qwen-coder", "nex-n2-mini"],
+    )
+    plan = lm.default_plan(customized)
+    assert plan.main_id == "nex-n2-mini"          # registry default_main wins
+    assert plan.keep_on_ids == ("qwen-coder",)    # autostart minus main
+    assert set(plan.install_ids) == {"qwen-coder", "nex-n2-mini", "ornstein"}
+
+
+def test_apply_selection_subset_reassigns_main(registry):
+    """Dropping the default main reassigns it to a selected autostart model."""
+    customized = lm.apply_install_selection(
+        registry,
+        selected_ids=["qwen-coder", "ornstein"],
+        autostart_ids=["ornstein"],
+    )
+    plan = lm.default_plan(customized)
+    assert plan.main_id == "ornstein"
+    assert "nex-n2-mini" not in plan.install_ids
+
+
+def test_apply_selection_not_autostarted_is_not_boot_loaded(registry):
+    """A selected-but-not-autostarted model is installed but not loaded at boot."""
+    customized = lm.apply_install_selection(
+        registry,
+        selected_ids=["nex-n2-mini", "ornstein"],
+        autostart_ids=["nex-n2-mini"],
+    )
+    plan = lm.default_plan(customized)
+    specs = lm.boot_load_specs(customized, plan, env={})
+    keys = [s["model_key"] for s in specs]
+    assert "ornstein3.6-35b-a3b" not in keys
+    assert "nex-n2-mini" in keys
+
+
+def test_apply_selection_adds_custom_model(registry):
+    """A custom model is appended, installed, and boot-loaded when autostarted."""
+    customized = lm.apply_install_selection(
+        registry,
+        selected_ids=["my-model"],
+        autostart_ids=["my-model"],
+        custom_profiles=[{
+            "name": "My Model",
+            "model_key": "my-model-key",
+            "download_url": "https://example.com/my/My-Model.gguf",
+        }],
+    )
+    plan = lm.default_plan(customized)
+    assert plan.main_id == "my-model"
+    specs = lm.download_specs(customized, None)
+    assert [s["id"] for s in specs] == ["my-model"]
+
+
+def test_apply_selection_rejects_unknown_and_unselected_autostart(registry):
+    """Selection validates ids and that autostart is a subset of installs."""
+    with pytest.raises(ValueError):
+        lm.apply_install_selection(registry, selected_ids=["nope"], autostart_ids=[])
+    with pytest.raises(ValueError):
+        lm.apply_install_selection(
+            registry, selected_ids=["nex-n2-mini"], autostart_ids=["ornstein"]
+        )
+
+
+def test_apply_selection_empty_is_core_only(registry, tmp_path, capsys):
+    """Selecting zero models yields an empty, non-crashing plan (core-only)."""
+    customized = lm.apply_install_selection(registry, selected_ids=[], autostart_ids=[])
+    assert not any(p["default_install"] for p in customized["profiles"])
+    plan = lm.default_plan(customized)
+    assert plan.install_ids == () and plan.main_id == ""
+    assert lm.boot_load_specs(customized, plan, env={}) == []
+    assert lm.download_specs(customized, None) == []
+    # The CLI surfaces of the empty catalog stay silent rather than erroring.
+    empty_catalog = tmp_path / "empty.json"
+    empty_catalog.write_text(json.dumps(customized), encoding="utf-8")
+    for cmd in ("active-main", "keep-on", "boot-load", "download-list"):
+        assert lm.main([cmd, "--catalog", str(empty_catalog)]) == 0
+        assert capsys.readouterr().out.strip() == ""
+
+
+def test_cli_apply_selection_writes_catalog(registry, tmp_path, capsys):
+    """The apply-selection CLI emits a customized catalog from a selection file."""
+    selection = tmp_path / "sel.json"
+    selection.write_text(json.dumps({
+        "selected_ids": ["qwen-coder"],
+        "autostart_ids": ["qwen-coder"],
+    }), encoding="utf-8")
+    assert lm.main([
+        "apply-selection", "--catalog", str(CATALOG), "--selection", str(selection)
+    ]) == 0
+    out = json.loads(capsys.readouterr().out)
+    installed = [p["id"] for p in out["profiles"] if p["default_install"]]
+    assert installed == ["qwen-coder"]
+    assert lm.default_plan(out).main_id == "qwen-coder"
