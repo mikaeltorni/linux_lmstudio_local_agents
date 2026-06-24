@@ -16,6 +16,12 @@ for local model serving.
   side-effect free so it stays testable; do all I/O in the installer.
 - `scripts/lmstudio_model_selector.py` — `lmstudio-model` CLI that switches the
   GPU-resident model via `lms`.
+- `scripts/lmstudio_install_menu.py` — interactive install-time menu for choosing
+  which models to install/autostart and adding user-supplied models. Emits a
+  selection that `lmstudio_models.apply_install_selection` renders into a
+  customized catalog; keep the selection state pure/testable, do TTY I/O in the
+  wrapper. The core (`lm_studio_app` + `serve`) installs and serves regardless of
+  any model choice; `models` is the optional, fully customizable layer.
 - `lib/lm_studio.sh` — LM Studio install + serve.env + boot script + user
   service management.
 

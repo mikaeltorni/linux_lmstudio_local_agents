@@ -28,9 +28,13 @@ carries three install-time fields:
   (`LMSTUDIO_MAIN_MODEL`) resolves to, and the default active model when no
   per-model switch variable is set.
 
-The installer lets you spacebar-select which models to install, enter the switch
-variable for each, pick the main model, and pick the keep-on models. The default
-(non-interactive) install ships these fields ready to go:
+On a terminal the `models` component opens an interactive menu where, per model,
+you toggle **install** and **autostart** (load at boot), and can **add your own
+model** by typing a name + `lms` model key + download URL. Your choices are
+written into a customized catalog, so downloads, boot-load, and the per-model
+switch commands all follow exactly what you picked — a model you install but do
+not autostart is downloaded and runtime-switchable yet not loaded at boot. The
+default (non-interactive) install ships these fields ready to go:
 
 | Model | Role | Default |
 |---|---|---|
@@ -60,12 +64,19 @@ See the full cross-repository map in
 
 ## Install
 
+The **core** is just the LM Studio app + the serving service (`lm_studio_app` +
+`serve`); it runs no matter what else you pick. Everything model-related is
+optional and fully customizable through the `models` component's interactive
+menu, and the server starts fine before any model is downloaded (the boot script
+skips models that are not present locally).
+
 ```bash
 git clone https://github.com/mikaeltorni/linux_lmstudio_local_agents.git
 cd linux_lmstudio_local_agents
-bash install.sh                 # interactive component + model selection
+bash install.sh                 # interactive component menu, then per-model menu
 bash install.sh --default       # non-interactive: default model layout above
 bash install.sh --select serve,models   # specific components
+bash install.sh --select serve  # core serving only, no model downloads
 ```
 
 Installing the LM Studio application itself writes to `/opt/lm-studio` and
@@ -75,18 +86,25 @@ installed LM Studio (root-only steps are skipped and reported).
 
 ## Components
 
-| id | description | default |
-|---|---|---|
-| `lm_studio_app` | LM Studio AppImage + CLI (root) | on |
-| `models` | Download + register selected models (interactive selection) | on |
-| `serve` | serve.env, boot script, and `lmstudio-serve.service` user service | on |
+| id | description | default | role |
+|---|---|---|---|
+| `lm_studio_app` | LM Studio AppImage + CLI (root) | on | core |
+| `serve` | serve.env, boot script, and `lmstudio-serve.service` user service | on | core |
+| `models` | Choose models to install + autostart, or add your own (interactive) | on | optional |
+
+`models` is default-on so a plain install is complete, but it is fully optional:
+deselect it (or `--select serve`) and the core still installs and serves.
 
 ## Tooling
 
 - `lmstudio-model <id>\|--restore` — switch the active GPU-resident model and
   persist the choice (used by the boot service and the per-model switch vars).
-- The model registry and resolution logic live in
+- The model registry and resolution logic — including per-model install/autostart
+  selection and custom-model normalization — live in
   [`scripts/lmstudio_models.py`](scripts/lmstudio_models.py) and are unit-tested.
+- The interactive per-model install menu lives in
+  [`scripts/lmstudio_install_menu.py`](scripts/lmstudio_install_menu.py); its
+  selection state is unit-tested with scripted input.
 
 ## Disclaimer
 

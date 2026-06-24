@@ -15,6 +15,6 @@ ISC_POSTFLIGHT="report_sudo_required"
 
 ISC_COMPONENTS=(
   "lm_studio_app|LM Studio AppImage + CLI (requires root)|on|install_lm_studio_app"
-  "models|Download + register selected models (qwen-coder, Nex, Ornstein)|on|install_models"
+  "models|Choose models to install + autostart, or add your own (interactive)|on|install_models"
   "serve|serve.env, boot script, and lmstudio-serve.service user service|on|configure_serving"
 )

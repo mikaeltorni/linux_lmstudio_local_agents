@@ -52,6 +52,18 @@ source "$SCRIPT_DIR/lib/lm_studio.sh"
 isc_activate_components
 source "$SCRIPT_DIR/installer/components.sh"
 
+# Signal whether this run may prompt interactively for per-model selection. The
+# shared runtime only shows its component menu when no mode flag is given on a
+# TTY; mirror that here so install_models launches the model-selection menu in
+# the same case and stays silent for --default/--all/--select/automated runs.
+LMLA_INTERACTIVE=1
+for __lmla_arg in "$@"; do
+  case "$__lmla_arg" in
+    --default|--all|--select|--select=*|--list-components|--help|-h) LMLA_INTERACTIVE=0 ;;
+  esac
+done
+export LMLA_INTERACTIVE
+
 # main - run the full install via the shared component runtime.
 main() {
   msg "Installing LM Studio local agents for $TARGET_USER"

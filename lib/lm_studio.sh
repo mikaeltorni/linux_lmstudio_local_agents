@@ -64,51 +64,107 @@ WRAPPER
   msg "LM Studio installed to $install_dir"
 }
 
-# lmla_install_assets — copy the model registry, defaults, boot script, and the
-# Python tools to the target user's config + ~/.local/bin (idempotent).
+# lmla_install_assets — copy the defaults, boot script, and the Python tools to
+# the target user's config + ~/.local/bin (idempotent). The model registry is
+# installed only when none exists yet, so a catalog customized by the models
+# component (per-model install/autostart + user-added models) survives a re-run
+# and is not clobbered when the serve component installs assets afterwards.
 lmla_install_assets() {
-  local config_dir bin_dir
+  local config_dir bin_dir catalog_dst
   config_dir="$(lmla_target_config_dir)"
   bin_dir="$(lmla_bin_dir)"
+  catalog_dst="$(lmla_target_catalog)"
   run_as_target mkdir -p "$config_dir" "$bin_dir"
   local asset
-  for asset in model-profiles.json defaults.sh defaults.py; do
+  for asset in defaults.sh defaults.py; do
     run_as_target install -D -m 0644 "$LMLA_CONFIG_DIR/$asset" "$config_dir/$asset"
   done
+  if [ ! -f "$catalog_dst" ]; then
+    run_as_target install -D -m 0644 "$LMLA_CONFIG_DIR/model-profiles.json" "$catalog_dst"
+  fi
   run_as_target install -D -m 0644 "$LMLA_DIR/scripts/lmla_logging_utils.py" "$bin_dir/lmla_logging_utils.py"
   run_as_target install -D -m 0755 "$LMLA_DIR/scripts/lmstudio_models.py" "$bin_dir/lmstudio-models"
   run_as_target install -D -m 0755 "$LMLA_DIR/scripts/lmstudio_model_selector.py" "$bin_dir/lmstudio-model"
   run_as_target install -D -m 0755 "$LMLA_CONFIG_DIR/lmstudio-boot.sh" "$bin_dir/lmstudio-boot.sh"
 }
 
-# lmla_download_models — download the installable models, verifying sha256 and
-# resuming partial downloads. Honors LMSTUDIO_DOWNLOAD_MODELS=0 (skip) and
-# LMSTUDIO_INSTALL_MODELS (a comma/space list of ids — e.g. a consumer that wants
-# only the qwen-coder model). The model selection is computed by the tested
-# lmstudio_models.py download-list command.
+# lmla_selection_from_ids — build a selection payload from a comma/space list of
+# model ids (the LMSTUDIO_INSTALL_MODELS consumer path, e.g. linux_programming_setup
+# requesting only qwen-coder). Autostart follows each model's shipped
+# default_keep_on/default_main flags so a consumer subset boots like the default.
+lmla_selection_from_ids() {
+  python3 - "$LMLA_CONFIG_DIR/model-profiles.json" "$1" <<'PY'
+import json, sys
+registry = json.load(open(sys.argv[1], encoding="utf-8"))
+wanted = {t for t in sys.argv[2].replace(",", " ").split() if t}
+selected = [p["id"] for p in registry["profiles"] if p["id"] in wanted]
+autostart = [p["id"] for p in registry["profiles"]
+             if p["id"] in wanted and (p.get("default_keep_on") or p.get("default_main"))]
+print(json.dumps({"selected_ids": selected, "autostart_ids": autostart}))
+PY
+}
+
+# lmla_run_install_menu — run the interactive per-model selection menu on the
+# controlling terminal and print the resulting selection JSON to stdout.
+lmla_run_install_menu() {
+  local out
+  out="$(mktemp)"
+  python3 "$LMLA_DIR/scripts/lmstudio_install_menu.py" \
+    --catalog "$LMLA_CONFIG_DIR/model-profiles.json" --out "$out" \
+    <>/dev/tty >/dev/tty 2>&1 || true
+  cat "$out"
+  rm -f "$out"
+}
+
+# lmla_write_selected_catalog — render a customized catalog from the shipped
+# registry + a selection payload (JSON on $1) and install it as the user's
+# catalog, so downloads, boot-load, and switch commands all follow the choices.
+lmla_write_selected_catalog() {
+  local selection="$1" catalog_dst
+  catalog_dst="$(lmla_target_catalog)"
+  run_as_target mkdir -p "$(dirname "$catalog_dst")"
+  printf '%s' "$selection" \
+    | python3 "$LMLA_DIR/scripts/lmstudio_models.py" apply-selection \
+        --catalog "$LMLA_CONFIG_DIR/model-profiles.json" \
+    | run_as_target tee "$catalog_dst" >/dev/null
+}
+
+# lmla_download_models — download the installable models named in the user's
+# customized catalog, verifying sha256 (when present) and resuming partial
+# downloads. Honors LMSTUDIO_DOWNLOAD_MODELS=0 (skip). The set of models is the
+# catalog's default_install set (already the user's per-model selection), so a
+# user-added model with no sha256 is fetched and accepted on existence alone.
 lmla_download_models() {
   [ "${LMSTUDIO_DOWNLOAD_MODELS:-1}" = "1" ] || { msg "Skipping model downloads (LMSTUDIO_DOWNLOAD_MODELS=0)"; return 0; }
-  local catalog="$LMLA_CONFIG_DIR/model-profiles.json"
+  local catalog
+  catalog="$(lmla_target_catalog)"
   while IFS=$'\t' read -r model_id download_url model_path sha256; do
     [ -n "$download_url" ] || continue
     local model_file="$TARGET_HOME/.lmstudio/models/$model_path"
-    if printf '%s  %s\n' "$sha256" "$model_file" | sha256sum --check --status 2>/dev/null; then
+    if [ -n "$sha256" ]; then
+      if printf '%s  %s\n' "$sha256" "$model_file" | sha256sum --check --status 2>/dev/null; then
+        continue
+      fi
+    elif [ -f "$model_file" ]; then
+      msg "Model already present (no sha256 to verify): $model_id"
       continue
     fi
     msg "Downloading LM Studio model: $model_id"
     run_as_target mkdir -p "$(dirname "$model_file")"
     local partial="${model_file}.part"
     run_as_target curl -L --fail --retry 8 --retry-delay 3 --continue-at - "$download_url" --output "$partial"
-    run_as_target bash -c 'printf "%s  %s\n" "$1" "$2" | sha256sum --check --status' _ "$sha256" "$partial"
+    if [ -n "$sha256" ]; then
+      run_as_target bash -c 'printf "%s  %s\n" "$1" "$2" | sha256sum --check --status' _ "$sha256" "$partial"
+    fi
     run_as_target mv "$partial" "$model_file"
-  done < <(LMSTUDIO_INSTALL_MODELS="${LMSTUDIO_INSTALL_MODELS:-}" \
-    python3 "$LMLA_DIR/scripts/lmstudio_models.py" download-list --catalog "$catalog")
+  done < <(python3 "$LMLA_DIR/scripts/lmstudio_models.py" download-list --catalog "$catalog")
 }
 
 # lmla_install_switch_commands — generate a small command per model that switches
 # the active main model to it (e.g. `nex`, `ornstein`, `qwencoder`).
 lmla_install_switch_commands() {
-  local catalog="$LMLA_CONFIG_DIR/model-profiles.json" bin_dir
+  local catalog bin_dir
+  catalog="$(lmla_target_catalog)"
   bin_dir="$(lmla_bin_dir)"
   while IFS=$'\t' read -r command_name profile_id; do
     [ -n "$command_name" ] || continue
@@ -123,16 +179,31 @@ import json, sys
 with open(sys.argv[1], encoding="utf-8") as handle:
     for profile in json.load(handle)["profiles"]:
         cmd = profile.get("command")
-        if cmd and not profile.get("default_keep_on"):
+        # Only installed, switchable (non keep-on) models get a switch command.
+        if cmd and profile.get("default_install") and not profile.get("default_keep_on"):
             print("\t".join((cmd, profile["id"])))
 PY
 )
 }
 
-# install_models — component entry: assets + downloads + switch commands.
+# install_models — component entry: assets, per-model selection, downloads, and
+# switch commands. The selection comes from (in order): an explicit
+# LMSTUDIO_INSTALL_MODELS id list (consumer path), the interactive menu on a real
+# terminal, or — when neither applies — the shipped defaults already in the
+# catalog. The chosen selection is written into the user's catalog so downloads,
+# boot-load, and switch commands all follow it.
 install_models() {
   msg "Installing LM Studio models and tools"
   lmla_install_assets
+  local selection=""
+  if [ -n "${LMSTUDIO_INSTALL_MODELS:-}" ]; then
+    selection="$(lmla_selection_from_ids "$LMSTUDIO_INSTALL_MODELS")"
+  elif [ "${LMLA_INTERACTIVE:-0}" = "1" ] && [ -t 0 ] && [ -t 1 ]; then
+    selection="$(lmla_run_install_menu)"
+  fi
+  if [ -n "$selection" ]; then
+    lmla_write_selected_catalog "$selection"
+  fi
   lmla_download_models
   lmla_install_switch_commands
 }
