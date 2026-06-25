@@ -78,7 +78,11 @@ def test_switch_model_does_not_unload_keep_on(monkeypatch):
             return MOD.subprocess.CompletedProcess(args, 0, "[]", "")
         return MOD.subprocess.CompletedProcess(args, 0, "", "")
 
+    def fake_sleep(_):
+        pass
+
     monkeypatch.setattr(MOD, "run_lms", fake_run)
+    monkeypatch.setattr(MOD, "time", type("time", (), {"sleep": staticmethod(fake_sleep)})())
     MOD.switch_model(_profile(profiles, "ornstein"), profiles, Path("/fake/lms"))
     assert "qwen2.5-coder-1.5b-instruct" not in unloaded
     assert "nex-n2-mini" in unloaded  # the other switchable model is unloaded
@@ -92,10 +96,18 @@ def test_failed_switch_restores_previous_model(monkeypatch):
     def fake_run(_lms, *args, check=True):
         """Provide a test double for run."""
         calls.append(args)
+        if args[:2] == ("ls", "--json"):
+            return MOD.subprocess.CompletedProcess(args, 0, "[]", "")
         if args[:2] == ("ps", "--json"):
-            return MOD.subprocess.CompletedProcess(args, 0, '[{"identifier":"nex-n2-mini"}]', "")
+            # switch_model first call: nex is loaded, ornstein is not
+            if len([c for c in calls if c[:2] == ("ps", "--json")]) == 1:
+                return MOD.subprocess.CompletedProcess(args, 0, '[{"identifier":"nex-n2-mini"}]', "")
+            # load_model pre-check: ornstein is not loaded yet
+            return MOD.subprocess.CompletedProcess(args, 0, "[]", "")
         if args[0] == "load" and "ornstein3.6-35b-a3b" in args:
             return MOD.subprocess.CompletedProcess(args, 1, "", "load failed\n")
+        if args[0] == "load" and "nex-n2-mini" in args:
+            return MOD.subprocess.CompletedProcess(args, 0, "", "")
         return MOD.subprocess.CompletedProcess(args, 0, "", "")
 
     monkeypatch.setattr(MOD, "run_lms", fake_run)
@@ -107,8 +119,91 @@ def test_failed_switch_restores_previous_model(monkeypatch):
         raise AssertionError("failed target load should raise")
 
     load_calls = [call for call in calls if call[0] == "load"]
+    assert len(load_calls) >= 2
     assert "ornstein3.6-35b-a3b" in load_calls[0]
     assert "nex-n2-mini" in load_calls[1]
+
+
+def test_load_model_unloads_before_loading_when_model_present(monkeypatch):
+    """load_model waits for unload to complete before loading."""
+    profile = {
+        "id": "ornstein",
+        "model_key": "ornstein3.6-35b-a3b",
+        "model_path": "GestaltLabs/Ornstein3.6-35B-A3B-GGUF/Ornstein3.6-35B-A3B-Q3_K_M.gguf",
+        "context_length": 131072,
+        "gpu": "max",
+        "parallel": 1,
+        "ttl": 0,
+    }
+    calls = []
+
+    def fake_run(_lms, *args, check=True):
+        """Provide a test double for run."""
+        calls.append(args)
+        if args[:2] == ("ls", "--json"):
+            return MOD.subprocess.CompletedProcess(
+                args,
+                0,
+                json.dumps([{"modelKey": "ornstein3.6-35b-a3b-q3_k_m", "path": profile["model_path"]}]),
+                "",
+            )
+        if args[:2] == ("ps", "--json"):
+            # First call shows model loaded (pre-check), then subsequent show unloaded
+            if len([c for c in calls if c[:1] == ("ps", "--json")]) == 1:
+                return MOD.subprocess.CompletedProcess(
+                    args, 0, json.dumps([{"identifier": "ornstein3.6-35b-a3b"}]), ""
+                )
+            return MOD.subprocess.CompletedProcess(args, 0, "[]", "")
+        if args[:1] == ("unload",):
+            return MOD.subprocess.CompletedProcess(args, 0, "", "")
+        if args[0] == "load":
+            return MOD.subprocess.CompletedProcess(args, 1, "", "load failed\n")
+        return MOD.subprocess.CompletedProcess(args, 0, "", "")
+
+    def fake_sleep(_):
+        pass
+
+    monkeypatch.setattr(MOD, "run_lms", fake_run)
+    monkeypatch.setattr(MOD, "time", type("time", (), {"sleep": staticmethod(fake_sleep)})())
+    result = MOD.load_model(profile, Path("/fake/lms"))
+    assert result.returncode == 1  # Because we fake failure
+
+    # Verify unload was called before load since model was detected as loaded
+    unload_calls = [c for c in calls if c[:1] == ("unload",)]
+    load_calls = [c for c in calls if c[:1] == ("load",)]
+    assert len(unload_calls) >= 2  # Both identifier and model_key
+    assert len(load_calls) >= 1
+
+
+def test_load_model_skips_when_already_loaded(monkeypatch):
+    """load_model returns early if model is already loaded."""
+    profile = {
+        "id": "ornstein",
+        "model_key": "ornstein3.6-35b-a3b",
+        "model_path": "GestaltLabs/Ornstein3.6-35B-A3B-GGUF/Ornstein3.6-35B-A3B-Q3_K_M.gguf",
+        "context_length": 131072,
+        "gpu": "max",
+        "parallel": 1,
+        "ttl": 0,
+    }
+    calls = []
+
+    def fake_run(_lms, *args, check=True):
+        """Provide a test double for run."""
+        calls.append(args)
+        if args[:2] == ("ps", "--json"):
+            return MOD.subprocess.CompletedProcess(
+                args, 0, json.dumps([{"identifier": "ornstein3.6-35b-a3b"}]), ""
+            )
+        return MOD.subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(MOD, "run_lms", fake_run)
+    result = MOD.load_model(profile, Path("/fake/lms"))
+    assert result.returncode == 0
+
+    # Verify load was NOT called since model was already present
+    load_calls = [c for c in calls if c[:1] == ("load",)]
+    assert len(load_calls) == 0
 
 
 def test_load_model_resolves_local_model_key_from_catalog_path(monkeypatch):
@@ -134,9 +229,15 @@ def test_load_model_resolves_local_model_key_from_catalog_path(monkeypatch):
                 json.dumps([{"modelKey": "ornstein3.6-35b-a3b-q3_k_m", "path": profile["model_path"]}]),
                 "",
             )
+        if args[:2] == ("ps", "--json"):
+            return MOD.subprocess.CompletedProcess(args, 0, "[]", "")
         return MOD.subprocess.CompletedProcess(args, 0, "", "")
 
+    def fake_sleep(_):
+        pass
+
     monkeypatch.setattr(MOD, "run_lms", fake_run)
+    monkeypatch.setattr(MOD, "time", type("time", (), {"sleep": staticmethod(fake_sleep)})())
     MOD.load_model(profile, Path("/fake/lms"))
     load_call = next(call for call in calls if call[0] == "load")
     assert "--identifier" in load_call
@@ -150,13 +251,15 @@ def test_switch_model_logs_state_transitions(monkeypatch, caplog):
 
     def fake_run(_lms, *args, check=True):
         """Stub all lms commands as successful."""
-        if args[:2] == ("ls", "--json"):
-            return MOD.subprocess.CompletedProcess(args, 0, "[]", "")
-        if args[:2] == ("ps", "--json"):
+        if args[:2] in {("ls", "--json"), ("ps", "--json")}:
             return MOD.subprocess.CompletedProcess(args, 0, "[]", "")
         return MOD.subprocess.CompletedProcess(args, 0, "", "")
 
+    def fake_sleep(_):
+        pass
+
     monkeypatch.setattr(MOD, "run_lms", fake_run)
+    monkeypatch.setattr(MOD, "time", type("time", (), {"sleep": staticmethod(fake_sleep)})())
     monkeypatch.setattr(MOD.LOGGER, "propagate", True)
     with caplog.at_level(logging.INFO, logger="lmstudio_model_selector"):
         MOD.switch_model(_profile(profiles, "ornstein"), profiles, Path("/fake/lms"))
@@ -177,7 +280,11 @@ def test_json_parse_failures_are_logged(monkeypatch, caplog):
             return MOD.subprocess.CompletedProcess(args, 0, "not-json", "")
         return MOD.subprocess.CompletedProcess(args, 0, "", "")
 
+    def fake_sleep(_):
+        pass
+
     monkeypatch.setattr(MOD, "run_lms", fake_run)
+    monkeypatch.setattr(MOD, "time", type("time", (), {"sleep": staticmethod(fake_sleep)})())
     monkeypatch.setattr(MOD.LOGGER, "propagate", True)
     with caplog.at_level(logging.WARNING, logger="lmstudio_model_selector"):
         MOD.switch_model(_profile(profiles, "ornstein"), profiles, Path("/fake/lms"))

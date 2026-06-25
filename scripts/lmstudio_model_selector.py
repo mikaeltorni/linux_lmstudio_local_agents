@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import time
 from pathlib import Path
 import subprocess
 import sys
@@ -78,9 +79,14 @@ def resolve_load_key(profile: dict, lms: Path) -> str:
     listed = run_lms(lms, "ls", "--json", check=False)
     if listed.returncode == 0:
         try:
-            for item in json.loads(listed.stdout):
+            items = json.loads(listed.stdout)
+            profile_key = profile["model_key"]
+            exact = [item for item in items if item.get("modelKey") == profile_key]
+            if exact:
+                return exact[0].get("modelKey") or profile_key
+            for item in items:
                 if model_matches_profile(item, profile):
-                    return item.get("modelKey") or profile["model_key"]
+                    return item.get("modelKey") or profile_key
         except json.JSONDecodeError:
             LOGGER.warning("Could not parse `lms ls --json`; using configured model key.")
     elif listed.stderr.strip():
@@ -93,6 +99,45 @@ def load_model(profile: dict, lms: Path) -> subprocess.CompletedProcess[str]:
     """Load one profile and return the CLI result."""
     load_key = resolve_load_key(profile, lms)
     LOGGER.info("Loading LM Studio model: %s", profile_identifier(profile))
+    target_identifier = profile_identifier(profile)
+    # Check if already loaded; if so, skip load entirely (saves time and avoids
+    # "already exists" errors when the initial state check failed).
+    ps_check = run_lms(lms, "ps", "--json", check=False)
+    if ps_check.returncode == 0:
+        try:
+            loaded_items = json.loads(ps_check.stdout)
+            loaded_ids = {
+                item.get("identifier") or item.get("modelKey")
+                for item in loaded_items
+            }
+            if target_identifier in loaded_ids or profile["model_key"] in loaded_ids:
+                LOGGER.info("Model already loaded: %s", target_identifier)
+                return subprocess.CompletedProcess(args=(), returncode=0, stdout="", stderr="")
+        except json.JSONDecodeError:
+            pass  # Proceed to unload/load on JSON parse failure
+    # Evict any existing instance first. The boot script already does this per
+    # model, but the runtime switch path needs it too: LM Studio rejects
+    # ``lms load`` when the requested identifier is already present, so an
+    # explicit unload avoids spurious "already exists" failures.
+    for unload_key in (target_identifier, profile["model_key"]):
+        unload_result = run_lms(lms, "unload", unload_key, check=False)
+        if unload_result.returncode == 0:
+            # Poll until the model is no longer present before proceeding
+            for _ in range(10):
+                ps_check = run_lms(lms, "ps", "--json", check=False)
+                if ps_check.returncode != 0:
+                    break
+                try:
+                    loaded_items = json.loads(ps_check.stdout)
+                    loaded_ids = {
+                        item.get("identifier") or item.get("modelKey")
+                        for item in loaded_items
+                    }
+                    if target_identifier not in loaded_ids and profile["model_key"] not in loaded_ids:
+                        break
+                except json.JSONDecodeError:
+                    pass
+                time.sleep(0.5)
     args = [
         "load",
         "-c",
@@ -102,7 +147,7 @@ def load_model(profile: dict, lms: Path) -> subprocess.CompletedProcess[str]:
         "--parallel",
         str(profile["parallel"]),
         "--identifier",
-        profile_identifier(profile),
+        target_identifier,
     ]
     if profile.get("ttl"):
         args.extend(["--ttl", str(profile["ttl"])])
@@ -127,6 +172,7 @@ def switch_model(profile: dict, profiles: list[dict], lms: Path) -> None:
         LOGGER.warning("`lms server start` returned non-zero: %s", server_result.stderr.strip())
     loaded = run_lms(lms, "ps", "--json", check=False)
     previous = None
+    identifiers = set()
     candidates = switchable_profiles(profiles)
     if loaded.returncode == 0:
         try:
@@ -156,6 +202,15 @@ def switch_model(profile: dict, profiles: list[dict], lms: Path) -> None:
             result = run_lms(lms, "unload", unload_key, check=False)
             if result.returncode and result.stderr.strip():
                 LOGGER.warning("Failed to unload %s: %s", unload_key, result.stderr.strip())
+
+    desired_identifier = profile_identifier(profile)
+    is_currently_loaded = (
+        desired_identifier in identifiers or profile["model_key"] in identifiers
+    )
+    if is_currently_loaded:
+        LOGGER.info("Already active: %s", desired_identifier)
+        LOGGER.info("Active LM Studio model: %s", desired_identifier)
+        return
 
     result = load_model(profile, lms)
     if result.returncode:

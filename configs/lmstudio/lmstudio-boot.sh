@@ -126,7 +126,17 @@ if [ -x "$MODELS_PY" ] || command -v python3 >/dev/null 2>&1; then
       continue
     fi
     load_key="$(resolve_load_key "$model_key")"
+    # Unload first if already loaded, waiting for completion. When identifier is empty,
+    # LM Studio auto-generates one from the model key, so check for both.
     "$LMS_CLI" unload "$identifier" >/dev/null 2>&1 || true
+    "$LMS_CLI" unload "$model_key" >/dev/null 2>&1 || true
+    identifier_pattern="${identifier:-$model_key}"
+    for _ in $(seq 1 10); do
+      if ! "$LMS_CLI" ps --json 2>/dev/null | grep -Fq "\"identifier\":\"$identifier_pattern\""; then
+        break
+      fi
+      sleep 0.5
+    done
     ttl_args=()
     [ "${ttl:-0}" != "0" ] && [ -n "${ttl:-}" ] && ttl_args=(--ttl "$ttl")
     # shellcheck disable=SC2086
