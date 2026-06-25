@@ -73,7 +73,7 @@ main() {
 
 # Listing/help must print only their own output (the master parses it).
 case "${1:-}" in
-  --list-components|--help|-h) component_main "$@"; exit $? ;;
+  --list-components|--detect|--help|-h|--uninstall|--uninstall=*) component_main "$@"; exit $? ;;
 esac
 
 main "$@"

@@ -247,3 +247,54 @@ EOF
   enable_systemd_service "$service_name" || log "warn" "enabling $service_name failed, continuing."
   run_as_target systemctl --user start "$service_name" || log "warn" "starting $service_name failed, continuing."
 }
+
+###############################################################################
+# Detection and uninstall (component lifecycle)
+###############################################################################
+
+# detect_lm_studio_app - true when the LM Studio app is installed under /opt.
+detect_lm_studio_app() { [ -d /opt/lm-studio ]; }
+
+# detect_models - true when the user's model registry/assets are installed.
+detect_models() { [ -f "$(lmla_target_catalog)" ]; }
+
+# detect_serve - true when the lmstudio-serve user service unit is installed.
+detect_serve() {
+  local service_name="${LMSTUDIO_USER_SERVICE_NAME:-lmstudio-serve.service}"
+  [ -f "$TARGET_HOME/.config/systemd/user/$service_name" ]
+}
+
+# uninstall_lm_studio_app - remove the system-wide LM Studio install (root). The
+# CLI and model weights under the user's home are left to the models component.
+uninstall_lm_studio_app() {
+  if ! is_root; then
+    note_sudo_required "rm -rf /opt/lm-studio (LM Studio app uninstall)"
+    return 0
+  fi
+  msg "Removing LM Studio app from /opt/lm-studio"
+  rm -rf /opt/lm-studio
+}
+
+# uninstall_models - remove the installed model registry, defaults, and the
+# lmstudio-* helper commands. Downloaded model weights under ~/.lmstudio are left
+# in place (they can be large and are managed by LM Studio itself).
+uninstall_models() {
+  local config_dir bin_dir
+  config_dir="$(lmla_target_config_dir)"
+  bin_dir="$(lmla_bin_dir)"
+  msg "Removing LM Studio model registry and helper commands (weights left in ~/.lmstudio)"
+  run_as_target rm -f \
+    "$bin_dir/lmstudio-models" "$bin_dir/lmstudio-model" \
+    "$bin_dir/lmstudio-boot.sh" "$bin_dir/lmla_logging_utils.py"
+  run_as_target rm -rf "$config_dir"
+}
+
+# uninstall_serve - stop/disable and remove the serve user service and its env.
+uninstall_serve() {
+  local service_name="${LMSTUDIO_USER_SERVICE_NAME:-lmstudio-serve.service}"
+  msg "Removing LM Studio serve user service"
+  run_as_target systemctl --user disable --now "$service_name" 2>/dev/null || true
+  run_as_target rm -f "$TARGET_HOME/.config/systemd/user/$service_name"
+  run_as_target rm -f "$TARGET_HOME/.config/lm-studio/serve.env"
+  run_as_target systemctl --user daemon-reload 2>/dev/null || true
+}
