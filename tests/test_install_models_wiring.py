@@ -21,6 +21,12 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 
 
+def test_models_component_is_default_off():
+    """The menu default should not install or download LLM models unattended."""
+    components = (ROOT / "installer" / "components.sh").read_text(encoding="utf-8")
+    assert "models|Choose models to install + autostart, or add your own (interactive)|off|" in components
+
+
 def _run(home: Path, install_models_env: str, *, call: str) -> subprocess.CompletedProcess:
     """Source lib/lm_studio.sh with stubs and run the requested function(s)."""
     script = f"""
@@ -112,6 +118,31 @@ def test_empty_selection_writes_core_only_catalog(tmp_path):
         assert not (bin_dir / cmd).exists()
     # The serving tools are still installed — the core is intact.
     assert (bin_dir / "lmstudio-models").exists()
+
+
+def test_additive_selection_preserves_existing_custom_models(tmp_path):
+    """LMSTUDIO_ADD_MODELS adds requested ids without dropping custom selections."""
+    custom_selection = (
+        "lmla_install_assets\n"
+        "lmla_write_selected_catalog '{\"selected_ids\":[\"my-model\"],"
+        "\"autostart_ids\":[\"my-model\"],"
+        "\"custom_profiles\":[{\"name\":\"My Model\",\"model_key\":\"my-model\","
+        "\"download_url\":\"https://example.com/my-model.gguf\"}]}'"
+    )
+    first = _run(tmp_path, "", call=custom_selection)
+    assert first.returncode == 0, first.stderr
+
+    second = _run(
+        tmp_path,
+        'export LMSTUDIO_ADD_MODELS="ornstein"\nexport LMSTUDIO_MAIN_MODEL="ornstein"',
+        call="install_models",
+    )
+    assert second.returncode == 0, second.stderr
+    catalog = _catalog(tmp_path)
+    installed = {p["id"] for p in catalog["profiles"] if p["default_install"]}
+    main = [p["id"] for p in catalog["profiles"] if p["default_main"]]
+    assert {"my-model", "ornstein"} <= installed
+    assert main == ["ornstein"]
 
 
 def test_default_path_installs_full_catalog(tmp_path):

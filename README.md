@@ -74,8 +74,8 @@ skips models that are not present locally).
 git clone https://github.com/mikaeltorni/linux_lmstudio_local_agents.git
 cd linux_lmstudio_local_agents
 bash install.sh                 # interactive component menu, then per-model menu
-bash install.sh --default       # non-interactive: default model layout above
-bash install.sh --select serve,models   # specific components
+bash install.sh --default       # non-interactive: core app/service, no models
+bash install.sh --select lm_studio_app,serve,models   # app/service plus model selector
 bash install.sh --select serve  # core serving only, no model downloads
 ```
 
@@ -90,10 +90,12 @@ installed LM Studio (root-only steps are skipped and reported).
 |---|---|---|---|
 | `lm_studio_app` | LM Studio AppImage + CLI (root) | on | core |
 | `serve` | serve.env, boot script, and `lmstudio-serve.service` user service | on | core |
-| `models` | Choose models to install + autostart, or add your own (interactive) | on | optional |
+| `models` | Choose models to install + autostart, or add your own (interactive) | off | optional |
 
-`models` is default-on so a plain install is complete, but it is fully optional:
-deselect it (or `--select serve`) and the core still installs and serves.
+`models` is default-off so a default or unattended install does not download or
+register any LLM models. Select it in the menu (or pass `--select
+lm_studio_app,serve,models`) when model installation is wanted; leave it off for
+core serving only.
 
 ## Tooling
 

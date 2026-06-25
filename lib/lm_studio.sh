@@ -104,6 +104,51 @@ print(json.dumps({"selected_ids": selected, "autostart_ids": autostart}))
 PY
 }
 
+# lmla_additive_selection_from_ids — build a selection payload by adding model
+# ids to the user's existing catalog without dropping already selected or custom
+# models. This is the consumer path for repositories that own default local
+# models (ACC's Ornstein/Nex and programming setup's qwen-coder).
+lmla_additive_selection_from_ids() {
+  local existing_catalog="$1" requested_ids="$2"
+  local requested_main="${3:-}"
+  local base_catalog="$LMLA_CONFIG_DIR/model-profiles.json"
+  python3 - "$base_catalog" "$existing_catalog" "$requested_ids" "$requested_main" <<'PY'
+import json, sys
+from pathlib import Path
+
+base = json.load(open(sys.argv[1], encoding="utf-8"))
+existing_path = Path(sys.argv[2])
+existing = json.load(open(existing_path, encoding="utf-8")) if existing_path.exists() else base
+wanted = {t for t in sys.argv[3].replace(",", " ").split() if t}
+requested_main = sys.argv[4].strip()
+selected = []
+autostart = []
+main_id = None
+for profile in existing.get("profiles", []):
+    pid = profile["id"]
+    if profile.get("default_install") or pid in wanted:
+        selected.append(pid)
+    if profile.get("default_keep_on") or profile.get("default_main"):
+        autostart.append(pid)
+    if profile.get("default_main"):
+        main_id = pid
+for profile in base.get("profiles", []):
+    pid = profile["id"]
+    if pid in wanted and pid not in selected:
+        selected.append(pid)
+    if pid in wanted and (profile.get("default_keep_on") or profile.get("default_main")) and pid not in autostart:
+        autostart.append(pid)
+for profile in base.get("profiles", []):
+    pid = profile["id"]
+    if pid in selected and profile.get("default_main"):
+        main_id = pid
+        break
+if requested_main and requested_main in selected:
+    main_id = requested_main
+print(json.dumps({"selected_ids": selected, "autostart_ids": autostart, "main_id": main_id}))
+PY
+}
+
 # lmla_run_install_menu — run the interactive per-model selection menu on the
 # controlling terminal and print the resulting selection JSON to stdout.
 lmla_run_install_menu() {
@@ -119,14 +164,29 @@ lmla_run_install_menu() {
 # lmla_write_selected_catalog — render a customized catalog from the shipped
 # registry + a selection payload (JSON on $1) and install it as the user's
 # catalog, so downloads, boot-load, and switch commands all follow the choices.
-lmla_write_selected_catalog() {
-  local selection="$1" catalog_dst
+lmla_write_selected_catalog_from() {
+  local selection="$1" base_catalog="$2" catalog_dst read_catalog tmp_catalog=""
   catalog_dst="$(lmla_target_catalog)"
+  read_catalog="$base_catalog"
+  if [ "$base_catalog" = "$catalog_dst" ]; then
+    tmp_catalog="$(mktemp)"
+    cp "$base_catalog" "$tmp_catalog"
+    read_catalog="$tmp_catalog"
+  fi
   run_as_target mkdir -p "$(dirname "$catalog_dst")"
   printf '%s' "$selection" \
     | python3 "$LMLA_DIR/scripts/lmstudio_models.py" apply-selection \
-        --catalog "$LMLA_CONFIG_DIR/model-profiles.json" \
+        --catalog "$read_catalog" \
     | run_as_target tee "$catalog_dst" >/dev/null
+  if [ -n "$tmp_catalog" ]; then
+    rm -f "$tmp_catalog"
+  fi
+}
+
+# lmla_write_selected_catalog — render a customized catalog from the shipped
+# registry + selection payload.
+lmla_write_selected_catalog() {
+  lmla_write_selected_catalog_from "$1" "$LMLA_CONFIG_DIR/model-profiles.json"
 }
 
 # lmla_download_models — download the installable models named in the user's
@@ -198,11 +258,17 @@ install_models() {
   local selection=""
   if [ -n "${LMSTUDIO_INSTALL_MODELS:-}" ]; then
     selection="$(lmla_selection_from_ids "$LMSTUDIO_INSTALL_MODELS")"
+  elif [ -n "${LMSTUDIO_ADD_MODELS:-}" ]; then
+    selection="$(lmla_additive_selection_from_ids "$(lmla_target_catalog)" "$LMSTUDIO_ADD_MODELS" "${LMSTUDIO_MAIN_MODEL:-}")"
   elif [ "${LMLA_INTERACTIVE:-0}" = "1" ] && [ -t 0 ] && [ -t 1 ]; then
     selection="$(lmla_run_install_menu)"
   fi
   if [ -n "$selection" ]; then
-    lmla_write_selected_catalog "$selection"
+    if [ -n "${LMSTUDIO_ADD_MODELS:-}" ] && [ -z "${LMSTUDIO_INSTALL_MODELS:-}" ] && [ -f "$(lmla_target_catalog)" ]; then
+      lmla_write_selected_catalog_from "$selection" "$(lmla_target_catalog)"
+    else
+      lmla_write_selected_catalog "$selection"
+    fi
   fi
   lmla_download_models
   lmla_install_switch_commands
