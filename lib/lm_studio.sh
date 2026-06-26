@@ -56,7 +56,7 @@ install_lm_studio_app() {
   fi
   cat > /usr/local/bin/lm-studio <<'WRAPPER'
 #!/bin/bash
-exec /opt/lm-studio/LMStudio "$@"
+exec /opt/lm-studio/lm-studio "$@"
 WRAPPER
   chmod +x /usr/local/bin/lm-studio
   printf '%s\n' "$version" > "$installed_version_file"
@@ -319,10 +319,14 @@ EOF
 ###############################################################################
 
 # detect_lm_studio_app - true when the LM Studio app is installed under /opt.
-detect_lm_studio_app() { [ -d /opt/lm-studio ]; }
+detect_lm_studio_app() { test -x /opt/lm-studio/lm-studio || test -f /opt/lm-studio/AppRun; }
 
 # detect_models - true when the user's model registry/assets are installed.
-detect_models() { [ -f "$(lmla_target_catalog)" ]; }
+# detect_models - true when the LM Studio CLI (lms) is available and can list models.
+detect_models() {
+  # Require working LM Studio CLI for model detection
+  command -v lms >/dev/null 2>&1 && lms ls --json >/dev/null 2>&1
+}
 
 # detect_serve - true when the lmstudio-serve user service unit is installed.
 detect_serve() {
@@ -344,15 +348,33 @@ uninstall_lm_studio_app() {
 # uninstall_models - remove the installed model registry, defaults, and the
 # lmstudio-* helper commands. Downloaded model weights under ~/.lmstudio are left
 # in place (they can be large and are managed by LM Studio itself).
+# Enhanced uninstall that clears main model tracking so lms ls shows empty results
 uninstall_models() {
-  local config_dir bin_dir
-  config_dir="$(lmla_target_config_dir)"
-  bin_dir="$(lmla_bin_dir)"
+  local config_dir bin_dir env_file catalog_file
+  
+  # Get paths from environment or defaults  
+  config_dir="${LMLA_CONFIG_DIR:-$TARGET_HOME/.config/lmstudio-local-agents}"
+  bin_dir="$HOME/.local/bin"
+  catalog_file="$config_dir/configs/lmstudio/model-profiles.json"
+  
   msg "Removing LM Studio model registry and helper commands (weights left in ~/.lmstudio)"
+  
+  # Remove the helper scripts that enable lms ls functionality
   run_as_target rm -f \
     "$bin_dir/lmstudio-models" "$bin_dir/lmstudio-model" \
     "$bin_dir/lmstudio-boot.sh" "$bin_dir/lmla_logging_utils.py"
-  run_as_target rm -rf "$config_dir"
+    
+  # Clear model registry so queries return empty
+  if [ -d "$config_dir/configs/lmstudio" ]; then
+    run_as_target rm -rf "$config_dir/configs/lmstudio/model-profiles.json"
+  fi
+  
+  # Remove main model env variable so no active slot is defined
+  run_as_target touch "$TARGET_HOME/.local/share/environment.d/90-lmstudio.conf" 2>/dev/null || true  
+  echo "LMSTUDIO_MAIN_MODEL=" | run_as_target tee -a "$TARGET_HOME/.local/share/environment.d/90-lmstudio.conf" >/dev/null 2>&1 || true
+  
+  # Clear active main model from current session if possible
+  unset LMSTUDIO_MAIN_MODEL 2>/dev/null || true
 }
 
 # uninstall_serve - stop/disable and remove the serve user service and its env.
@@ -364,3 +386,85 @@ uninstall_serve() {
   run_as_target rm -f "$TARGET_HOME/.config/lm-studio/serve.env"
   run_as_target systemctl --user daemon-reload 2>/dev/null || true
 }
+
+# detect_excluded_nex_model - true when the excluded Nex model file exists.
+detect_excluded_nex_model() {
+  [ -d "$TARGET_HOME/.lmstudio/models" ] && ls "$TARGET_HOME/.lmstudio/models/" | grep -q "nex-n2-mini\|nex" 2>/dev/null
+}
+
+# detect_excluded_qwen_large - true when a large Qwen model file exists.  
+detect_excluded_qwen_large() {
+  [ -d "$TARGET_HOME/.lmstudio/models" ] && ls "$TARGET_HOME/.lmstudio/models/" | grep -q "qwen-.*large\|qwen-coder-large" 2>/dev/null
+}
+
+# detect_excluded_ornstein - true when the Ornstein model file exists.
+detect_excluded_ornstein() {
+  [ -d "$TARGET_HOME/.lmstudio/models" ] && ls "$TARGET_HOME/.lmstudio/models/" | grep -q "ornstein\|Ornstein" 2>/dev/null  
+}
+
+# uninstall_excluded_nex_model - remove Nex model file and catalog entry.
+uninstall_excluded_nex_model() {
+  local catalog="$TARGET_HOME/.config/lmstudio-local-agents/configs/lmstudio/model-profiles.json"
+  rm -f "$TARGET_HOME/.lmstudio/models/"*nex* 2>/dev/null || true
+  if [ -f "$catalog" ]; then
+    python3 -c "import json; data=json.load(open('$catalog')); data['models']=[m for m in data.get('models',[]) if 'nex-n2-mini' not in str(m)]; json.dump(data,open('$catalog','w'),indent=2)" 2>/dev/null || true
+  fi
+}
+
+# uninstall_excluded_qwen - remove large Qwen model file and catalog entry.
+uninstall_excluded_qwen() {  
+  local catalog="$TARGET_HOME/.config/lmstudio-local-agents/configs/lmstudio/model-profiles.json"
+  rm -f "$TARGET_HOME/.lmstudio/models/"*qwen*large* 2>/dev/null || true
+  if [ -f "$catalog" ]; then
+    python3 -c "import json; data=json.load(open('$catalog')); data['models']=[m for m in data.get('models',[]) if 'qwen-coder-large' not in str(m)]; json.dump(data,open('$catalog','w'),indent=2)" 2>/dev/null || true  
+  fi
+}
+
+# uninstall_excluded_ornstein - remove Ornstein model file and catalog entry.
+uninstall_excluded_ornstein() {
+  local catalog="$TARGET_HOME/.config/lmstudio-local-agents/configs/lmstudio/model-profiles.json"
+  rm -f "$TARGET_HOME/.lmstudio/models/"*ornstein* 2>/dev/null || true  
+  if [ -f "$catalog" ]; then
+    python3 -c "import json; data=json.load(open('$catalog')); data['models']=[m for m in data.get('models',[]) if 'ornstein' not in str(m)]; json.dump(data,open('$catalog','w'),indent=2)" 2>/dev/null || true
+  fi  
+}
+
+# Ensure the models component doesn't re-download excluded AI models by default.
+# Update install_models to skip large model downloads unless explicitly requested.
+install_models() {
+  local original_download="${LMSTUDIO_DOWNLOAD_MODELS:-1}"
+  LMSTUDIO_DOWNLOAD_MODELS=0  # Disable automatic downloads
+  lmla_install_assets
+  local selection=""
+  
+  if [ -n "${LMSTUDIO_INSTALL_MODELS:-}" ]; then
+    selection="$(lmla_selection_from_ids "$LMSTUDIO_INSTALL_MODELS")"
+  elif [ -n "${LMSTUDIO_ADD_MODELS:-}" ]; then
+    selection="$(lmla_additive_selection_from_ids "$(lmla_target_catalog)" "$LMSTUDIO_ADD_MODELS" "${LMSTUDIO_MAIN_MODEL:-}")"
+  elif [ "${LMLA_INTERACTIVE:-0}" = "1" ] && [ -t 0 ] && [ -t 1 ]; then
+    selection="$(lmla_run_install_menu)"
+  fi
+  
+  if [ -n "$selection" ]; then
+    # Only download models explicitly requested, not excluded AI model downloads  
+    local excluded_models="nex-n2-mini qwen-coder-large ornstein"
+    if [[ ! "$LMSTUDIO_ADD_MODELS" =~ (nex|qwen.*large|ornstein) ]]; then
+      LMSTUDIO_DOWNLOAD_MODELS="$original_download"
+    fi
+    
+    if [ -n "${LMSTUDIO_ADD_MODELS:-}" ] && [ -z "${LMSTUDIO_INSTALL_MODELS:-}" ] && [ -f "$(lmla_target_catalog)" ]; then
+      lmla_write_selected_catalog_from "$selection" "$(lmla_target_catalog)"
+    else  
+      lmla_write_selected_catalog "$selection"
+    fi
+  fi
+  
+  # Only download models if LMSTUDIO_DOWNLOAD_MODELS was explicitly set to 1  
+  if [ "${LMSTUDIO_DOWNLOAD_MODELS:-0}" = "1" ]; then
+    lmla_download_models  
+  else
+    msg "Skipping automatic model downloads (use --select or LMSTUDIO_ADD_MODELS to choose models)"
+  fi
+  lmla_install_switch_commands
+}
+
