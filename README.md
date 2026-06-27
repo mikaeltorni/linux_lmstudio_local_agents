@@ -39,8 +39,7 @@ default (non-interactive) install ships these fields ready to go:
 | Model | Role | Default |
 |---|---|---|
 | `qwen-coder` (Qwen2.5 Coder 1.5B) | editor autocomplete | **kept on** (`LMSTUDIO_USE_QWEN_CODER`) |
-| `nex` (Nex-N2-mini 35B MoE) | primary coding agent | **main** (`LMSTUDIO_USE_NEX`, `LMSTUDIO_MAIN_MODEL`) |
-| `ornstein` (Ornstein 3.6 35B-A3B) | deeper-reasoning backup | switchable (`LMSTUDIO_USE_ORNSTEIN`) |
+| `ornstein` (Ornstein 3.6 35B-A3B) | primary coding agent | **main** (`LMSTUDIO_USE_ORNSTEIN`, `LMSTUDIO_MAIN_MODEL`) |
 
 At runtime the active main model is resolved by precedence: the first model whose
 `switch_env_var` is truthy, else `LMSTUDIO_MAIN_MODEL` when it names a model, else
