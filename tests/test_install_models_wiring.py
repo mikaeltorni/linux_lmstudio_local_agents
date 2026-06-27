@@ -24,7 +24,10 @@ ROOT = Path(__file__).resolve().parent.parent
 def test_models_component_is_default_off():
     """The menu default should not install or download LLM models unattended."""
     components = (ROOT / "installer" / "components.sh").read_text(encoding="utf-8")
-    assert "models|Choose models to install + autostart, or add your own (interactive)|off|" in components
+    assert (
+        "models|Choose models to install + autostart, or add your own "
+        "(interactive)|off|install_models|detect_models|uninstall_models"
+    ) in components
 
 
 def _run(home: Path, install_models_env: str, *, call: str) -> subprocess.CompletedProcess:
@@ -63,16 +66,16 @@ def test_consumer_selection_writes_customized_catalog(tmp_path):
     """LMSTUDIO_INSTALL_MODELS installs only the named models in the catalog."""
     proc = _run(
         tmp_path,
-        'export LMSTUDIO_INSTALL_MODELS="nex-n2-mini ornstein"',
+        'export LMSTUDIO_INSTALL_MODELS="qwen-coder ornstein"',
         call="install_models",
     )
     assert proc.returncode == 0, proc.stderr
     catalog = _catalog(tmp_path)
     installed = [p["id"] for p in catalog["profiles"] if p["default_install"]]
-    assert set(installed) == {"nex-n2-mini", "ornstein"}
+    assert set(installed) == {"qwen-coder", "ornstein"}
     main = [p["id"] for p in catalog["profiles"] if p["default_main"]]
-    assert main == ["nex-n2-mini"]  # nex carries default_main among the subset
-    # Switch command exists for the switchable ornstein, not for the dropped qwen.
+    assert main == ["ornstein"]
+    # Switch command exists for Ornstein; keep-on qwen has no switch command.
     bin_dir = tmp_path / ".local/bin"
     assert (bin_dir / "ornstein").exists()
     assert not (bin_dir / "qwencoder").exists()
@@ -114,7 +117,7 @@ def test_empty_selection_writes_core_only_catalog(tmp_path):
     catalog = _catalog(tmp_path)
     assert not any(p["default_install"] for p in catalog["profiles"])
     bin_dir = tmp_path / ".local/bin"
-    for cmd in ("nex", "ornstein", "qwencoder"):
+    for cmd in ("ornstein", "qwencoder"):
         assert not (bin_dir / cmd).exists()
     # The serving tools are still installed — the core is intact.
     assert (bin_dir / "lmstudio-models").exists()
@@ -151,4 +154,4 @@ def test_default_path_installs_full_catalog(tmp_path):
     assert proc.returncode == 0, proc.stderr
     catalog = _catalog(tmp_path)
     installed = {p["id"] for p in catalog["profiles"] if p["default_install"]}
-    assert installed == {"qwen-coder", "nex-n2-mini", "ornstein"}
+    assert installed == {"qwen-coder", "ornstein"}

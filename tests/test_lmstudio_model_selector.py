@@ -9,6 +9,7 @@ models (the CPU-resident Qwen coder).
 from __future__ import annotations
 
 import importlib.util
+import copy
 import json
 import logging
 import sys
@@ -36,10 +37,10 @@ def _profile(profiles, pid):
 
 
 def test_catalog_contains_expected_model_commands():
-    """The catalog defines the qwen-coder, nex, and ornstein profiles."""
+    """The catalog defines only the qwen-coder and Ornstein profiles."""
     catalog = json.loads(CATALOG.read_text(encoding="utf-8"))
     profiles = {profile["id"]: profile for profile in catalog["profiles"]}
-    assert profiles["nex-n2-mini"]["command"] == "nex"
+    assert set(profiles) == {"qwen-coder", "ornstein"}
     assert profiles["ornstein"]["command"] == "ornstein"
     assert profiles["ornstein"]["model_key"] == "ornstein3.6-35b-a3b"
     assert profiles["qwen-coder"]["model_key"] == "qwen2.5-coder-1.5b-instruct"
@@ -51,7 +52,7 @@ def test_restore_uses_persisted_profile_then_boot_default():
     profiles = MOD.load_profiles(CATALOG)
     with tempfile.TemporaryDirectory() as td:
         state_file = Path(td) / "selected-model"
-        assert MOD.selected_profile(profiles, None, state_file)["id"] == "nex-n2-mini"
+        assert MOD.selected_profile(profiles, None, state_file)["id"] == "ornstein"
         state_file.write_text("ornstein\n", encoding="utf-8")
         assert MOD.selected_profile(profiles, None, state_file)["id"] == "ornstein"
 
@@ -60,7 +61,7 @@ def test_switchable_profiles_excludes_keep_on():
     """The switchable set excludes keep-on models (the Qwen coder)."""
     profiles = MOD.load_profiles(CATALOG)
     ids = {profile["id"] for profile in MOD.switchable_profiles(profiles)}
-    assert ids == {"nex-n2-mini", "ornstein"}
+    assert ids == {"ornstein"}
 
 
 def test_switch_model_does_not_unload_keep_on(monkeypatch):
@@ -85,12 +86,21 @@ def test_switch_model_does_not_unload_keep_on(monkeypatch):
     monkeypatch.setattr(MOD, "time", type("time", (), {"sleep": staticmethod(fake_sleep)})())
     MOD.switch_model(_profile(profiles, "ornstein"), profiles, Path("/fake/lms"))
     assert "qwen2.5-coder-1.5b-instruct" not in unloaded
-    assert "nex-n2-mini" in unloaded  # the other switchable model is unloaded
+    assert set(unloaded) == {"ornstein3.6-35b-a3b"}
 
 
 def test_failed_switch_restores_previous_model(monkeypatch):
     """A failed target load restores the previously loaded switchable model."""
     profiles = MOD.load_profiles(CATALOG)
+    alternate = copy.deepcopy(_profile(profiles, "ornstein"))
+    alternate.update({
+        "id": "alternate-coder",
+        "command": "alternate",
+        "model_key": "alternate-coder-key",
+        "model_path": "example/alternate-coder.gguf",
+        "default_main": False,
+    })
+    profiles.append(alternate)
     calls = []
 
     def fake_run(_lms, *args, check=True):
@@ -99,14 +109,14 @@ def test_failed_switch_restores_previous_model(monkeypatch):
         if args[:2] == ("ls", "--json"):
             return MOD.subprocess.CompletedProcess(args, 0, "[]", "")
         if args[:2] == ("ps", "--json"):
-            # switch_model first call: nex is loaded, ornstein is not
+            # switch_model first call: the alternate is loaded, Ornstein is not
             if len([c for c in calls if c[:2] == ("ps", "--json")]) == 1:
-                return MOD.subprocess.CompletedProcess(args, 0, '[{"identifier":"nex-n2-mini"}]', "")
+                return MOD.subprocess.CompletedProcess(args, 0, '[{"identifier":"alternate-coder-key"}]', "")
             # load_model pre-check: ornstein is not loaded yet
             return MOD.subprocess.CompletedProcess(args, 0, "[]", "")
         if args[0] == "load" and "ornstein3.6-35b-a3b" in args:
             return MOD.subprocess.CompletedProcess(args, 1, "", "load failed\n")
-        if args[0] == "load" and "nex-n2-mini" in args:
+        if args[0] == "load" and "alternate-coder-key" in args:
             return MOD.subprocess.CompletedProcess(args, 0, "", "")
         return MOD.subprocess.CompletedProcess(args, 0, "", "")
 
@@ -121,7 +131,7 @@ def test_failed_switch_restores_previous_model(monkeypatch):
     load_calls = [call for call in calls if call[0] == "load"]
     assert len(load_calls) >= 2
     assert "ornstein3.6-35b-a3b" in load_calls[0]
-    assert "nex-n2-mini" in load_calls[1]
+    assert "alternate-coder-key" in load_calls[1]
 
 
 def test_load_model_unloads_before_loading_when_model_present(monkeypatch):

@@ -107,7 +107,7 @@ PY
 # lmla_additive_selection_from_ids — build a selection payload by adding model
 # ids to the user's existing catalog without dropping already selected or custom
 # models. This is the consumer path for repositories that own default local
-# models (ACC's Ornstein/Nex and programming setup's qwen-coder).
+# models (ACC's Ornstein and programming setup's qwen-coder).
 lmla_additive_selection_from_ids() {
   local existing_catalog="$1" requested_ids="$2"
   local requested_main="${3:-}"
@@ -221,7 +221,7 @@ lmla_download_models() {
 }
 
 # lmla_install_switch_commands — generate a small command per model that switches
-# the active main model to it (e.g. `nex`, `ornstein`, `qwencoder`).
+# the active main model to it (e.g. `ornstein` or `qwencoder`).
 lmla_install_switch_commands() {
   local catalog bin_dir
   catalog="$(lmla_target_catalog)"
@@ -387,11 +387,6 @@ uninstall_serve() {
   run_as_target systemctl --user daemon-reload 2>/dev/null || true
 }
 
-# detect_excluded_nex_model - true when the excluded Nex model file exists.
-detect_excluded_nex_model() {
-  [ -d "$TARGET_HOME/.lmstudio/models" ] && ls "$TARGET_HOME/.lmstudio/models/" | grep -q "nex-n2-mini\|nex" 2>/dev/null
-}
-
 # detect_excluded_qwen_large - true when a large Qwen model file exists.  
 detect_excluded_qwen_large() {
   [ -d "$TARGET_HOME/.lmstudio/models" ] && ls "$TARGET_HOME/.lmstudio/models/" | grep -q "qwen-.*large\|qwen-coder-large" 2>/dev/null
@@ -400,15 +395,6 @@ detect_excluded_qwen_large() {
 # detect_excluded_ornstein - true when the Ornstein model file exists.
 detect_excluded_ornstein() {
   [ -d "$TARGET_HOME/.lmstudio/models" ] && ls "$TARGET_HOME/.lmstudio/models/" | grep -q "ornstein\|Ornstein" 2>/dev/null  
-}
-
-# uninstall_excluded_nex_model - remove Nex model file and catalog entry.
-uninstall_excluded_nex_model() {
-  local catalog="$TARGET_HOME/.config/lmstudio-local-agents/configs/lmstudio/model-profiles.json"
-  rm -f "$TARGET_HOME/.lmstudio/models/"*nex* 2>/dev/null || true
-  if [ -f "$catalog" ]; then
-    python3 -c "import json; data=json.load(open('$catalog')); data['models']=[m for m in data.get('models',[]) if 'nex-n2-mini' not in str(m)]; json.dump(data,open('$catalog','w'),indent=2)" 2>/dev/null || true
-  fi
 }
 
 # uninstall_excluded_qwen - remove large Qwen model file and catalog entry.
@@ -447,8 +433,7 @@ install_models() {
   
   if [ -n "$selection" ]; then
     # Only download models explicitly requested, not excluded AI model downloads  
-    local excluded_models="nex-n2-mini qwen-coder-large ornstein"
-    if [[ ! "$LMSTUDIO_ADD_MODELS" =~ (nex|qwen.*large|ornstein) ]]; then
+    if [[ ! "${LMSTUDIO_ADD_MODELS:-}" =~ (qwen.*large|ornstein) ]]; then
       LMSTUDIO_DOWNLOAD_MODELS="$original_download"
     fi
     
@@ -467,4 +452,3 @@ install_models() {
   fi
   lmla_install_switch_commands
 }
-

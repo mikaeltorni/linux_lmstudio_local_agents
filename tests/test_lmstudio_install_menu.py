@@ -56,27 +56,27 @@ def _silent_writer(_text):
 
 
 def test_initial_state_matches_shipped_defaults(profiles):
-    """The menu opens on the shipped layout (all installed; qwen+nex autostart)."""
+    """The menu opens on the shipped layout (qwen and Ornstein autostart)."""
     state = menu.SelectionState(profiles)
     sel = state.selection()
-    assert set(sel["selected_ids"]) == {"qwen-coder", "nex-n2-mini", "ornstein"}
-    assert set(sel["autostart_ids"]) == {"qwen-coder", "nex-n2-mini"}
+    assert set(sel["selected_ids"]) == {"qwen-coder", "ornstein"}
+    assert set(sel["autostart_ids"]) == {"qwen-coder", "ornstein"}
 
 
 def test_toggle_install_clears_autostart(profiles):
     """Deselecting a model also removes it from autostart."""
     state = menu.SelectionState(profiles)
-    state.toggle_install(2)  # nex (installed + autostart) -> off
+    state.toggle_install(2)  # Ornstein (installed + autostart) -> off
     sel = state.selection()
-    assert "nex-n2-mini" not in sel["selected_ids"]
-    assert "nex-n2-mini" not in sel["autostart_ids"]
+    assert "ornstein" not in sel["selected_ids"]
+    assert "ornstein" not in sel["autostart_ids"]
 
 
 def test_toggle_autostart_selects_model(profiles):
     """Enabling autostart on a non-autostart model also installs it."""
     state = menu.SelectionState(profiles)
-    # ornstein installed but not autostart by default -> enable autostart.
-    state.toggle_autostart(3)
+    state.toggle_install(2)
+    state.toggle_autostart(2)
     sel = state.selection()
     assert "ornstein" in sel["autostart_ids"]
     assert "ornstein" in sel["selected_ids"]
@@ -84,7 +84,7 @@ def test_toggle_autostart_selects_model(profiles):
 
 def test_run_menu_scripted_toggles(profiles):
     """A scripted session toggles install/autostart then installs."""
-    reader = _scripted_reader(["3", "b1", ""])  # drop ornstein, autostart->off qwen, done
+    reader = _scripted_reader(["2", "b1", ""])  # drop ornstein, autostart->off qwen, done
     sel = menu.run_menu(profiles, reader=reader, writer=_silent_writer)
     assert "ornstein" not in sel["selected_ids"]
     assert "qwen-coder" not in sel["autostart_ids"]

@@ -9,7 +9,7 @@
     "notes": "Each profile mirrors `lms load` flags. switch_env_var switches the active main model when set truthy; default_keep_on models stay loaded; default_main is the model LMSTUDIO_MAIN_MODEL and the default active slot resolve to."
   },
   "lms_load_option_reference": {
-    "model_key": "Argument to lms load / served id (e.g. nex-n2-mini).",
+    "model_key": "Argument to lms load / served id (e.g. ornstein3.6-35b-a3b).",
     "gpu": "off | max | float 0..1 — fraction of layers on GPU (llama.cpp offload).",
     "context_length": "-c / --context-length — prompt+generation window in tokens.",
     "parallel": "--parallel — max concurrent predictions (continuous batching).",
@@ -42,30 +42,10 @@
       "default_main": false
     },
     {
-      "id": "nex-n2-mini",
-      "command": "nex",
-      "description": "Primary Nex-N2-mini 35B MoE (UD-Q3_K_XL) — Codex OSS default",
-      "boot_preload": true,
-      "model_key": "nex-n2-mini",
-      "download_url": "https://huggingface.co/sjakek/Nex-N2-mini-GGUF/resolve/4df5b2279b45ea798a3d0b56c5c66014cfd8b91f/Nex-N2-mini-UD-Q3_K_XL.gguf?download=true",
-      "model_path": "sjakek/Nex-N2-mini-GGUF/Nex-N2-mini-UD-Q3_K_XL.gguf",
-      "sha256": "1b744f5358b0e080792fb8b113ec129ea49d2e4d61898d507d3848379fd8a40d",
-      "gpu": "max",
-      "context_length": 131072,
-      "parallel": 1,
-      "ttl": 0,
-      "identifier": "",
-      "yes": true,
-      "switch_env_var": "LMSTUDIO_USE_NEX",
-      "default_install": true,
-      "default_keep_on": false,
-      "default_main": true
-    },
-    {
       "id": "ornstein",
       "command": "ornstein",
-      "description": "Ornstein 3.6 35B-A3B (Q3_K_M) — deeper reasoning backup",
-      "boot_preload": false,
+      "description": "Ornstein 3.6 35B-A3B (Q3_K_M) — primary Codex OSS model",
+      "boot_preload": true,
       "model_key": "ornstein3.6-35b-a3b",
       "download_url": "https://huggingface.co/GestaltLabs/Ornstein3.6-35B-A3B-GGUF/resolve/main/Ornstein3.6-35B-A3B-Q3_K_M.gguf?download=true",
       "model_path": "GestaltLabs/Ornstein3.6-35B-A3B-GGUF/Ornstein3.6-35B-A3B-Q3_K_M.gguf",
@@ -80,7 +60,7 @@
       "switch_env_var": "LMSTUDIO_USE_ORNSTEIN",
       "default_install": true,
       "default_keep_on": false,
-      "default_main": false
+      "default_main": true
     }
   ]
 }

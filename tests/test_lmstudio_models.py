@@ -3,7 +3,7 @@
 
 These exercise the pure planning/resolution helpers against the real registry in
 configs/lmstudio/model-profiles.json, so the shipped default layout (qwen-coder
-kept on, Nex main, Ornstein switchable) is locked in, plus the env-var switching
+kept on and Ornstein main) is locked in, plus the env-var switching
 precedence and the validation rules.
 """
 
@@ -64,8 +64,8 @@ def test_main_env_var_default_and_value(registry, tmp_path):
 
 def test_find_profile_by_id_command_and_key(registry):
     """Profiles resolve by id, command alias, and model key."""
-    assert lm.find_profile(registry, "nex-n2-mini")["id"] == "nex-n2-mini"
-    assert lm.find_profile(registry, "nex")["id"] == "nex-n2-mini"
+    assert lm.find_profile(registry, "qwen-coder")["id"] == "qwen-coder"
+    assert lm.find_profile(registry, "qwencoder")["id"] == "qwen-coder"
     assert lm.find_profile(registry, "ornstein3.6-35b-a3b")["id"] == "ornstein"
     assert lm.find_profile(registry, "nope") is None
 
@@ -73,13 +73,12 @@ def test_find_profile_by_id_command_and_key(registry):
 def test_default_plan_matches_shipped_layout(registry):
     """The default plan encodes the user's required default model layout."""
     plan = lm.default_plan(registry)
-    assert set(plan.install_ids) == {"qwen-coder", "nex-n2-mini", "ornstein"}
+    assert set(plan.install_ids) == {"qwen-coder", "ornstein"}
     assert plan.keep_on_ids == ("qwen-coder",)
-    assert plan.main_id == "nex-n2-mini"
+    assert plan.main_id == "ornstein"
     assert plan.main_env_var == "LMSTUDIO_MAIN_MODEL"
     assert plan.switch_env_vars == {
         "qwen-coder": "LMSTUDIO_USE_QWEN_CODER",
-        "nex-n2-mini": "LMSTUDIO_USE_NEX",
         "ornstein": "LMSTUDIO_USE_ORNSTEIN",
     }
 
@@ -90,41 +89,40 @@ def test_default_plan_keep_on_model_keys(registry):
     assert plan.keep_on_model_keys(registry) == ["qwen2.5-coder-1.5b-instruct"]
 
 
-def test_resolve_active_main_defaults_to_nex(registry):
-    """With no switch variables set, the active main model is Nex."""
+def test_resolve_active_main_defaults_to_ornstein(registry):
+    """With no switch variables set, the active main model is Ornstein."""
     plan = lm.default_plan(registry)
-    assert lm.resolve_active_main(registry, plan, env={})["model_key"] == "nex-n2-mini"
+    assert lm.resolve_active_main(registry, plan, env={})["model_key"] == "ornstein3.6-35b-a3b"
 
 
 def test_resolve_active_main_switch_var_wins(registry):
     """A truthy per-model switch variable switches the active main model."""
     plan = lm.default_plan(registry)
-    active = lm.resolve_active_main(registry, plan, env={"LMSTUDIO_USE_ORNSTEIN": "1"})
-    assert active["model_key"] == "ornstein3.6-35b-a3b"
+    active = lm.resolve_active_main(registry, plan, env={"LMSTUDIO_USE_QWEN_CODER": "1"})
+    assert active["model_key"] == "qwen2.5-coder-1.5b-instruct"
 
 
 def test_resolve_active_main_switch_var_precedence_is_registry_order(registry):
     """When multiple switch vars are set, the first in registry order wins."""
     plan = lm.default_plan(registry)
     active = lm.resolve_active_main(
-        registry, plan, env={"LMSTUDIO_USE_NEX": "yes", "LMSTUDIO_USE_ORNSTEIN": "on"}
+        registry, plan, env={"LMSTUDIO_USE_QWEN_CODER": "yes", "LMSTUDIO_USE_ORNSTEIN": "on"}
     )
-    # nex appears before ornstein in the registry, so it wins.
-    assert active["model_key"] == "nex-n2-mini"
+    assert active["model_key"] == "qwen2.5-coder-1.5b-instruct"
 
 
 def test_resolve_active_main_main_env_var_names_model(registry):
     """LMSTUDIO_MAIN_MODEL selects an installed model when no switch var is set."""
     plan = lm.default_plan(registry)
-    active = lm.resolve_active_main(registry, plan, env={"LMSTUDIO_MAIN_MODEL": "ornstein"})
-    assert active["model_key"] == "ornstein3.6-35b-a3b"
+    active = lm.resolve_active_main(registry, plan, env={"LMSTUDIO_MAIN_MODEL": "qwen-coder"})
+    assert active["model_key"] == "qwen2.5-coder-1.5b-instruct"
 
 
 def test_resolve_active_main_switch_var_beats_main_env_var(registry):
     """A per-model switch var takes precedence over LMSTUDIO_MAIN_MODEL."""
     plan = lm.default_plan(registry)
     active = lm.resolve_active_main(
-        registry, plan, env={"LMSTUDIO_MAIN_MODEL": "nex-n2-mini", "LMSTUDIO_USE_ORNSTEIN": "1"}
+        registry, plan, env={"LMSTUDIO_MAIN_MODEL": "qwen-coder", "LMSTUDIO_USE_ORNSTEIN": "1"}
     )
     assert active["model_key"] == "ornstein3.6-35b-a3b"
 
@@ -132,23 +130,23 @@ def test_resolve_active_main_switch_var_beats_main_env_var(registry):
 def test_resolve_active_main_ignores_uninstalled_main_env_target(registry):
     """An LMSTUDIO_MAIN_MODEL that names an uninstalled model is ignored."""
     plan = lm.build_plan(
-        registry, install_ids=["nex-n2-mini", "qwen-coder"], keep_on_ids=["qwen-coder"], main_id="nex-n2-mini"
+        registry, install_ids=["ornstein"], keep_on_ids=[], main_id="ornstein"
     )
-    active = lm.resolve_active_main(registry, plan, env={"LMSTUDIO_MAIN_MODEL": "ornstein"})
-    assert active["model_key"] == "nex-n2-mini"
+    active = lm.resolve_active_main(registry, plan, env={"LMSTUDIO_MAIN_MODEL": "qwen-coder"})
+    assert active["model_key"] == "ornstein3.6-35b-a3b"
 
 
 def test_falsey_switch_var_does_not_switch(registry):
     """A non-truthy switch value does not change the active model."""
     plan = lm.default_plan(registry)
-    assert lm.resolve_active_main(registry, plan, env={"LMSTUDIO_USE_ORNSTEIN": "0"})["model_key"] == "nex-n2-mini"
-    assert lm.resolve_active_main(registry, plan, env={"LMSTUDIO_USE_ORNSTEIN": ""})["model_key"] == "nex-n2-mini"
+    assert lm.resolve_active_main(registry, plan, env={"LMSTUDIO_USE_QWEN_CODER": "0"})["model_key"] == "ornstein3.6-35b-a3b"
+    assert lm.resolve_active_main(registry, plan, env={"LMSTUDIO_USE_QWEN_CODER": ""})["model_key"] == "ornstein3.6-35b-a3b"
 
 
 def test_build_plan_rejects_empty_install(registry):
     """An empty install set is rejected."""
     with pytest.raises(ValueError):
-        lm.build_plan(registry, install_ids=[], keep_on_ids=[], main_id="nex-n2-mini")
+        lm.build_plan(registry, install_ids=[], keep_on_ids=[], main_id="ornstein")
 
 
 def test_build_plan_rejects_unknown_id(registry):
@@ -160,32 +158,32 @@ def test_build_plan_rejects_unknown_id(registry):
 def test_build_plan_rejects_keep_on_not_installed(registry):
     """Keep-on models must be part of the install set."""
     with pytest.raises(ValueError):
-        lm.build_plan(registry, install_ids=["nex-n2-mini"], keep_on_ids=["ornstein"], main_id="nex-n2-mini")
+        lm.build_plan(registry, install_ids=["ornstein"], keep_on_ids=["qwen-coder"], main_id="ornstein")
 
 
 def test_build_plan_rejects_main_not_installed(registry):
     """The main model must be part of the install set."""
     with pytest.raises(ValueError):
-        lm.build_plan(registry, install_ids=["qwen-coder"], keep_on_ids=["qwen-coder"], main_id="nex-n2-mini")
+        lm.build_plan(registry, install_ids=["qwen-coder"], keep_on_ids=["qwen-coder"], main_id="ornstein")
 
 
 def test_build_plan_switch_var_override(registry):
     """Explicit switch-var overrides win over the registry defaults."""
     plan = lm.build_plan(
         registry,
-        install_ids=["nex-n2-mini", "ornstein"],
+        install_ids=["qwen-coder", "ornstein"],
         keep_on_ids=[],
-        main_id="nex-n2-mini",
-        switch_env_vars={"ornstein": "LMSTUDIO_BACKUP"},
+        main_id="ornstein",
+        switch_env_vars={"qwen-coder": "LMSTUDIO_BACKUP"},
     )
-    assert plan.switch_env_vars["ornstein"] == "LMSTUDIO_BACKUP"
-    assert lm.resolve_active_main(registry, plan, env={"LMSTUDIO_BACKUP": "1"})["model_key"] == "ornstein3.6-35b-a3b"
+    assert plan.switch_env_vars["qwen-coder"] == "LMSTUDIO_BACKUP"
+    assert lm.resolve_active_main(registry, plan, env={"LMSTUDIO_BACKUP": "1"})["model_key"] == "qwen2.5-coder-1.5b-instruct"
 
 
 def test_cli_active_main_and_keep_on(registry, capsys):
     """The CLI prints the default active main and keep-on model keys."""
     assert lm.main(["active-main", "--catalog", str(CATALOG)]) == 0
-    assert capsys.readouterr().out.strip() == "nex-n2-mini"
+    assert capsys.readouterr().out.strip() == "ornstein3.6-35b-a3b"
     assert lm.main(["keep-on", "--catalog", str(CATALOG)]) == 0
     assert capsys.readouterr().out.strip() == "qwen2.5-coder-1.5b-instruct"
 
@@ -194,7 +192,7 @@ def test_cli_default_plan_json(capsys):
     """The default-plan subcommand emits valid JSON describing the plan."""
     assert lm.main(["default-plan", "--catalog", str(CATALOG)]) == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["main_id"] == "nex-n2-mini"
+    assert payload["main_id"] == "ornstein"
     assert payload["keep_on_ids"] == ["qwen-coder"]
 
 
@@ -203,7 +201,7 @@ def test_boot_load_specs_default_order(registry):
     plan = lm.default_plan(registry)
     specs = lm.boot_load_specs(registry, plan, env={})
     keys = [spec["model_key"] for spec in specs]
-    assert keys == ["qwen2.5-coder-1.5b-instruct", "nex-n2-mini"]
+    assert keys == ["qwen2.5-coder-1.5b-instruct", "ornstein3.6-35b-a3b"]
     # Each spec carries the lms load flags.
     assert set(lm.BOOT_LOAD_FIELDS).issubset(specs[0].keys())
     assert specs[0]["gpu"] == "off" and specs[1]["gpu"] == "max"
@@ -227,7 +225,7 @@ def test_boot_load_specs_no_duplicate_when_main_is_keep_on(registry):
 
 def test_installable_ids_default_is_all_default_install(registry):
     """With no selection, every default_install model is installable."""
-    assert set(lm.installable_ids(registry)) == {"qwen-coder", "nex-n2-mini", "ornstein"}
+    assert set(lm.installable_ids(registry)) == {"qwen-coder", "ornstein"}
 
 
 def test_installable_ids_honors_selection(registry):
@@ -263,7 +261,7 @@ def test_cli_download_list_default_lists_all(registry, capsys, monkeypatch):
     monkeypatch.delenv("LMSTUDIO_INSTALL_MODELS", raising=False)
     assert lm.main(["download-list", "--catalog", str(CATALOG)]) == 0
     ids = {line.split("\t")[0] for line in capsys.readouterr().out.splitlines() if line.strip()}
-    assert ids == {"qwen-coder", "nex-n2-mini", "ornstein"}
+    assert ids == {"qwen-coder", "ornstein"}
 
 
 # --- Custom model normalization -------------------------------------------------
@@ -302,42 +300,41 @@ def test_normalize_custom_profile_requires_name():
 
 
 def test_apply_selection_default_layout_roundtrips(registry):
-    """Selecting all three with the shipped autostart reproduces default_plan."""
-    customized = lm.apply_install_selection(
-        registry,
-        selected_ids=["qwen-coder", "nex-n2-mini", "ornstein"],
-        autostart_ids=["qwen-coder", "nex-n2-mini"],
-    )
-    plan = lm.default_plan(customized)
-    assert plan.main_id == "nex-n2-mini"          # registry default_main wins
-    assert plan.keep_on_ids == ("qwen-coder",)    # autostart minus main
-    assert set(plan.install_ids) == {"qwen-coder", "nex-n2-mini", "ornstein"}
-
-
-def test_apply_selection_subset_reassigns_main(registry):
-    """Dropping the default main reassigns it to a selected autostart model."""
+    """Selecting both shipped models with autostart reproduces default_plan."""
     customized = lm.apply_install_selection(
         registry,
         selected_ids=["qwen-coder", "ornstein"],
-        autostart_ids=["ornstein"],
+        autostart_ids=["qwen-coder", "ornstein"],
     )
     plan = lm.default_plan(customized)
     assert plan.main_id == "ornstein"
-    assert "nex-n2-mini" not in plan.install_ids
+    assert plan.keep_on_ids == ("qwen-coder",)    # autostart minus main
+    assert set(plan.install_ids) == {"qwen-coder", "ornstein"}
+
+
+def test_apply_selection_subset_reassigns_main(registry):
+    """Dropping the default main reassigns it to the selected keep-on model."""
+    customized = lm.apply_install_selection(
+        registry,
+        selected_ids=["qwen-coder"],
+        autostart_ids=["qwen-coder"],
+    )
+    plan = lm.default_plan(customized)
+    assert plan.main_id == "qwen-coder"
 
 
 def test_apply_selection_not_autostarted_is_not_boot_loaded(registry):
     """A selected-but-not-autostarted model is installed but not loaded at boot."""
     customized = lm.apply_install_selection(
         registry,
-        selected_ids=["nex-n2-mini", "ornstein"],
-        autostart_ids=["nex-n2-mini"],
+        selected_ids=["qwen-coder", "ornstein"],
+        autostart_ids=["ornstein"],
     )
     plan = lm.default_plan(customized)
     specs = lm.boot_load_specs(customized, plan, env={})
     keys = [s["model_key"] for s in specs]
-    assert "ornstein3.6-35b-a3b" not in keys
-    assert "nex-n2-mini" in keys
+    assert "qwen2.5-coder-1.5b-instruct" not in keys
+    assert "ornstein3.6-35b-a3b" in keys
 
 
 def test_apply_selection_adds_custom_model(registry):
@@ -364,7 +361,7 @@ def test_apply_selection_rejects_unknown_and_unselected_autostart(registry):
         lm.apply_install_selection(registry, selected_ids=["nope"], autostart_ids=[])
     with pytest.raises(ValueError):
         lm.apply_install_selection(
-            registry, selected_ids=["nex-n2-mini"], autostart_ids=["ornstein"]
+            registry, selected_ids=["qwen-coder"], autostart_ids=["ornstein"]
         )
 
 
