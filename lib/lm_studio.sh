@@ -149,6 +149,25 @@ print(json.dumps({"selected_ids": selected, "autostart_ids": autostart, "main_id
 PY
 }
 
+# lmla_custom_selection_from_env — build an additive selection for a custom
+# consumer model. Values are process arguments, so names and URLs are never
+# evaluated as shell code.
+lmla_custom_selection_from_env() {
+  local -a args=(
+    custom-selection
+    --catalog "$(lmla_target_catalog)"
+    --name "${LMSTUDIO_CUSTOM_MODEL_NAME:-}"
+    --model-key "${LMSTUDIO_CUSTOM_MODEL_KEY:-}"
+    --download-url "${LMSTUDIO_CUSTOM_MODEL_URL:-}"
+    --sha256 "${LMSTUDIO_CUSTOM_MODEL_SHA256:-}"
+    --role "${LMSTUDIO_CUSTOM_MODEL_ROLE:-main}"
+  )
+  if [[ ${LMSTUDIO_CUSTOM_MODEL_SWITCH_ENV_VAR+x} ]]; then
+    args+=(--switch-env-var "$LMSTUDIO_CUSTOM_MODEL_SWITCH_ENV_VAR")
+  fi
+  python3 "$LMLA_DIR/scripts/lmstudio_models.py" "${args[@]}"
+}
+
 # lmla_run_install_menu — run the interactive per-model selection menu on the
 # controlling terminal and print the resulting selection JSON to stdout.
 lmla_run_install_menu() {
@@ -220,6 +239,46 @@ lmla_download_models() {
   done < <(python3 "$LMLA_DIR/scripts/lmstudio_models.py" download-list --catalog "$catalog")
 }
 
+# lmla_install_model_download_service — install the resumable background download
+# script and a systemd --user oneshot unit that runs it on every login. Selected
+# models can be many gigabytes; downloading them inline blocks the master
+# installer (and every repository sequenced after it) for the entire transfer,
+# so a clean install never reaches the later components. Running the download as
+# a detached, login-resumed service lets the installer return immediately while
+# the model finishes in the background and survives reboots until present.
+lmla_install_model_download_service() {
+  local bin_dir unit_dir service
+  bin_dir="$(lmla_bin_dir)"
+  unit_dir="$TARGET_HOME/.config/systemd/user"
+  service="${LMSTUDIO_DOWNLOAD_SERVICE_NAME:-lmstudio-model-download.service}"
+  run_as_target install -D -m 0755 "$LMLA_DIR/scripts/lmstudio_download_models.sh" \
+    "$bin_dir/lmstudio-download-models"
+  run_as_target mkdir -p "$unit_dir"
+  run_as_target tee "$unit_dir/$service" >/dev/null <<EOF
+[Unit]
+Description=Resumable background download of selected LM Studio models
+After=default.target
+[Service]
+Type=oneshot
+ExecStart=$bin_dir/lmstudio-download-models
+[Install]
+WantedBy=default.target
+EOF
+  reload_systemd_daemon || log "warn" "systemctl daemon-reload failed, continuing."
+  enable_systemd_service "$service" || log "warn" "enabling $service failed, continuing."
+}
+
+# lmla_start_background_model_download — set up and kick off the background
+# download without waiting for it. The service resumes on every login until the
+# selected models exist, so the installer never blocks on a multi-GB transfer.
+lmla_start_background_model_download() {
+  local service="${LMSTUDIO_DOWNLOAD_SERVICE_NAME:-lmstudio-model-download.service}"
+  lmla_install_model_download_service
+  run_as_target systemctl --user start --no-block "$service" 2>/dev/null \
+    || log "warn" "could not start $service now; it will run on the next login."
+  msg "Selected models download in the background (resumes on each login until complete)."
+}
+
 # lmla_install_switch_commands — generate a small command per model that switches
 # the active main model to it (e.g. `ornstein` or `vibethinker`).
 lmla_install_switch_commands() {
@@ -254,30 +313,56 @@ PY
 # boot-load, and switch commands all follow it.
 install_models() {
   msg "Installing LM Studio models and tools"
+  local catalog_existed=0
+  [ -f "$(lmla_target_catalog)" ] && catalog_existed=1
   lmla_install_assets
+  if [ "$catalog_existed" = "0" ] \
+    && { [ -n "${LMSTUDIO_ADD_MODELS:-}" ] || [ "${LMSTUDIO_ADD_CUSTOM_MODEL:-0}" = "1" ]; }; then
+    lmla_write_selected_catalog '{"selected_ids":[],"autostart_ids":[]}'
+  fi
   local selection=""
   if [ -n "${LMSTUDIO_INSTALL_MODELS:-}" ]; then
     selection="$(lmla_selection_from_ids "$LMSTUDIO_INSTALL_MODELS")"
+  elif [ "${LMSTUDIO_ADD_CUSTOM_MODEL:-0}" = "1" ]; then
+    selection="$(lmla_custom_selection_from_env)"
   elif [ -n "${LMSTUDIO_ADD_MODELS:-}" ]; then
     selection="$(lmla_additive_selection_from_ids "$(lmla_target_catalog)" "$LMSTUDIO_ADD_MODELS" "${LMSTUDIO_MAIN_MODEL:-}")"
   elif [ "${LMLA_INTERACTIVE:-0}" = "1" ] && [ -t 0 ] && [ -t 1 ]; then
     selection="$(lmla_run_install_menu)"
   fi
   if [ -n "$selection" ]; then
-    if [ -n "${LMSTUDIO_ADD_MODELS:-}" ] && [ -z "${LMSTUDIO_INSTALL_MODELS:-}" ] && [ -f "$(lmla_target_catalog)" ]; then
+    if { [ -n "${LMSTUDIO_ADD_MODELS:-}" ] || [ "${LMSTUDIO_ADD_CUSTOM_MODEL:-0}" = "1" ]; } \
+      && [ -z "${LMSTUDIO_INSTALL_MODELS:-}" ] && [ -f "$(lmla_target_catalog)" ]; then
       lmla_write_selected_catalog_from "$selection" "$(lmla_target_catalog)"
     else
       lmla_write_selected_catalog "$selection"
     fi
   fi
-  lmla_download_models
+  # Downloads run in the background by default so a multi-GB model never blocks
+  # the master installer (and the repositories sequenced after it). Set
+  # LMSTUDIO_DOWNLOAD_MODELS_SYNC=1 to download inline instead (tests, or a
+  # standalone run that wants to block until the weights are present).
+  if [ "${LMSTUDIO_DOWNLOAD_MODELS:-1}" = "1" ] \
+    && [ "${LMSTUDIO_DOWNLOAD_MODELS_SYNC:-0}" != "1" ]; then
+    lmla_start_background_model_download
+  else
+    lmla_download_models
+  fi
   lmla_install_switch_commands
 }
 
 # configure_serving — component entry: serve.env, boot script, user service.
 configure_serving() {
   msg "Configuring LM Studio serving (serve.env + boot + user service)"
+  local catalog_existed=0
+  [ -f "$(lmla_target_catalog)" ] && catalog_existed=1
   lmla_install_assets
+  if [ "$catalog_existed" = "0" ]; then
+    # Core-only installation must not inherit the shipped model defaults. A
+    # later consumer can then add exactly its own model without downloading all
+    # other shipped profiles as accidental "existing selections".
+    lmla_write_selected_catalog '{"selected_ids":[],"autostart_ids":[]}'
+  fi
   local env_dir="$TARGET_HOME/.config/lm-studio"
   local service_name="${LMSTUDIO_USER_SERVICE_NAME:-lmstudio-serve.service}"
   local boot_script bin_dir
@@ -385,70 +470,4 @@ uninstall_serve() {
   run_as_target rm -f "$TARGET_HOME/.config/systemd/user/$service_name"
   run_as_target rm -f "$TARGET_HOME/.config/lm-studio/serve.env"
   run_as_target systemctl --user daemon-reload 2>/dev/null || true
-}
-
-# detect_excluded_qwen_large - true when a large Qwen model file exists.  
-detect_excluded_qwen_large() {
-  [ -d "$TARGET_HOME/.lmstudio/models" ] && ls "$TARGET_HOME/.lmstudio/models/" | grep -q "qwen-.*large\|qwen-coder-large" 2>/dev/null
-}
-
-# detect_excluded_ornstein - true when the Ornstein model file exists.
-detect_excluded_ornstein() {
-  [ -d "$TARGET_HOME/.lmstudio/models" ] && ls "$TARGET_HOME/.lmstudio/models/" | grep -q "ornstein\|Ornstein" 2>/dev/null  
-}
-
-# uninstall_excluded_qwen - remove large Qwen model file and catalog entry.
-uninstall_excluded_qwen() {  
-  local catalog="$TARGET_HOME/.config/lmstudio-local-agents/configs/lmstudio/model-profiles.json"
-  rm -f "$TARGET_HOME/.lmstudio/models/"*qwen*large* 2>/dev/null || true
-  if [ -f "$catalog" ]; then
-    python3 -c "import json; data=json.load(open('$catalog')); data['models']=[m for m in data.get('models',[]) if 'qwen-coder-large' not in str(m)]; json.dump(data,open('$catalog','w'),indent=2)" 2>/dev/null || true  
-  fi
-}
-
-# uninstall_excluded_ornstein - remove Ornstein model file and catalog entry.
-uninstall_excluded_ornstein() {
-  local catalog="$TARGET_HOME/.config/lmstudio-local-agents/configs/lmstudio/model-profiles.json"
-  rm -f "$TARGET_HOME/.lmstudio/models/"*ornstein* 2>/dev/null || true  
-  if [ -f "$catalog" ]; then
-    python3 -c "import json; data=json.load(open('$catalog')); data['models']=[m for m in data.get('models',[]) if 'ornstein' not in str(m)]; json.dump(data,open('$catalog','w'),indent=2)" 2>/dev/null || true
-  fi  
-}
-
-# Ensure the models component doesn't re-download excluded AI models by default.
-# Update install_models to skip large model downloads unless explicitly requested.
-install_models() {
-  local original_download="${LMSTUDIO_DOWNLOAD_MODELS:-1}"
-  LMSTUDIO_DOWNLOAD_MODELS=0  # Disable automatic downloads
-  lmla_install_assets
-  local selection=""
-  
-  if [ -n "${LMSTUDIO_INSTALL_MODELS:-}" ]; then
-    selection="$(lmla_selection_from_ids "$LMSTUDIO_INSTALL_MODELS")"
-  elif [ -n "${LMSTUDIO_ADD_MODELS:-}" ]; then
-    selection="$(lmla_additive_selection_from_ids "$(lmla_target_catalog)" "$LMSTUDIO_ADD_MODELS" "${LMSTUDIO_MAIN_MODEL:-}")"
-  elif [ "${LMLA_INTERACTIVE:-0}" = "1" ] && [ -t 0 ] && [ -t 1 ]; then
-    selection="$(lmla_run_install_menu)"
-  fi
-  
-  if [ -n "$selection" ]; then
-    # Only download models explicitly requested, not excluded AI model downloads  
-    if [[ ! "${LMSTUDIO_ADD_MODELS:-}" =~ (qwen.*large|ornstein) ]]; then
-      LMSTUDIO_DOWNLOAD_MODELS="$original_download"
-    fi
-    
-    if [ -n "${LMSTUDIO_ADD_MODELS:-}" ] && [ -z "${LMSTUDIO_INSTALL_MODELS:-}" ] && [ -f "$(lmla_target_catalog)" ]; then
-      lmla_write_selected_catalog_from "$selection" "$(lmla_target_catalog)"
-    else  
-      lmla_write_selected_catalog "$selection"
-    fi
-  fi
-  
-  # Only download models if LMSTUDIO_DOWNLOAD_MODELS was explicitly set to 1  
-  if [ "${LMSTUDIO_DOWNLOAD_MODELS:-0}" = "1" ]; then
-    lmla_download_models  
-  else
-    msg "Skipping automatic model downloads (use --select or LMSTUDIO_ADD_MODELS to choose models)"
-  fi
-  lmla_install_switch_commands
 }
