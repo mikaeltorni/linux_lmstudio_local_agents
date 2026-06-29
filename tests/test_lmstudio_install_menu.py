@@ -56,11 +56,11 @@ def _silent_writer(_text):
 
 
 def test_initial_state_matches_shipped_defaults(profiles):
-    """The menu opens on the shipped layout (qwen and Ornstein autostart)."""
+    """The menu opens on the shipped layout (vibethinker and Ornstein autostart)."""
     state = menu.SelectionState(profiles)
     sel = state.selection()
-    assert set(sel["selected_ids"]) == {"qwen-coder", "ornstein"}
-    assert set(sel["autostart_ids"]) == {"qwen-coder", "ornstein"}
+    assert set(sel["selected_ids"]) == {"vibethinker", "ornstein"}
+    assert set(sel["autostart_ids"]) == {"vibethinker", "ornstein"}
 
 
 def test_toggle_install_clears_autostart(profiles):
@@ -84,11 +84,11 @@ def test_toggle_autostart_selects_model(profiles):
 
 def test_run_menu_scripted_toggles(profiles):
     """A scripted session toggles install/autostart then installs."""
-    reader = _scripted_reader(["2", "b1", ""])  # drop ornstein, autostart->off qwen, done
+    reader = _scripted_reader(["2", "b1", ""])  # drop ornstein, autostart->off vibethinker, done
     sel = menu.run_menu(profiles, reader=reader, writer=_silent_writer)
     assert "ornstein" not in sel["selected_ids"]
-    assert "qwen-coder" not in sel["autostart_ids"]
-    assert "qwen-coder" in sel["selected_ids"]
+    assert "vibethinker" not in sel["autostart_ids"]
+    assert "vibethinker" in sel["selected_ids"]
 
 
 def test_run_menu_add_custom_model(profiles):
@@ -115,4 +115,4 @@ def test_run_menu_all_and_none(profiles):
     """'all' selects every model; a trailing toggle still applies."""
     reader = _scripted_reader(["none", "1", ""])
     sel = menu.run_menu(profiles, reader=reader, writer=_silent_writer)
-    assert sel["selected_ids"] == ["qwen-coder"]
+    assert sel["selected_ids"] == ["vibethinker"]

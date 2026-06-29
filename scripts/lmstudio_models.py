@@ -523,7 +523,7 @@ def main(argv: list[str] | None = None) -> int:
 
     The ``download-list`` command honors the ``LMSTUDIO_INSTALL_MODELS``
     environment variable (a comma/space separated list of model ids) so a
-    consumer like linux_programming_setup can request only the qwen-coder model.
+    consumer like linux_programming_setup can request only the vibethinker model.
     """
     parser = argparse.ArgumentParser(description="LM Studio local-agent model resolution.")
     parser.add_argument(

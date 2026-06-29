@@ -3,7 +3,7 @@
 
 Ported from agent_command_center, where this logic used to live, and extended for
 the keep-on aware switcher: switching the main slot must not unload keep-on
-models (the CPU-resident Qwen coder).
+models (the CPU-resident VibeThinker).
 """
 
 from __future__ import annotations
@@ -37,14 +37,14 @@ def _profile(profiles, pid):
 
 
 def test_catalog_contains_expected_model_commands():
-    """The catalog defines only the qwen-coder and Ornstein profiles."""
+    """The catalog defines only the vibethinker and Ornstein profiles."""
     catalog = json.loads(CATALOG.read_text(encoding="utf-8"))
     profiles = {profile["id"]: profile for profile in catalog["profiles"]}
-    assert set(profiles) == {"qwen-coder", "ornstein"}
+    assert set(profiles) == {"vibethinker", "ornstein"}
     assert profiles["ornstein"]["command"] == "ornstein"
     assert profiles["ornstein"]["model_key"] == "ornstein3.6-35b-a3b"
-    assert profiles["qwen-coder"]["model_key"] == "qwen2.5-coder-1.5b-instruct"
-    assert profiles["qwen-coder"]["default_keep_on"] is True
+    assert profiles["vibethinker"]["model_key"] == "vibethinker-1.5b"
+    assert profiles["vibethinker"]["default_keep_on"] is True
 
 
 def test_restore_uses_persisted_profile_then_boot_default():
@@ -58,14 +58,14 @@ def test_restore_uses_persisted_profile_then_boot_default():
 
 
 def test_switchable_profiles_excludes_keep_on():
-    """The switchable set excludes keep-on models (the Qwen coder)."""
+    """The switchable set excludes keep-on models (the VibeThinker model)."""
     profiles = MOD.load_profiles(CATALOG)
     ids = {profile["id"] for profile in MOD.switchable_profiles(profiles)}
     assert ids == {"ornstein"}
 
 
 def test_switch_model_does_not_unload_keep_on(monkeypatch):
-    """Switching the main slot never unloads the keep-on Qwen coder."""
+    """Switching the main slot never unloads the keep-on VibeThinker."""
     profiles = MOD.load_profiles(CATALOG)
     unloaded = []
 
@@ -85,7 +85,7 @@ def test_switch_model_does_not_unload_keep_on(monkeypatch):
     monkeypatch.setattr(MOD, "run_lms", fake_run)
     monkeypatch.setattr(MOD, "time", type("time", (), {"sleep": staticmethod(fake_sleep)})())
     MOD.switch_model(_profile(profiles, "ornstein"), profiles, Path("/fake/lms"))
-    assert "qwen2.5-coder-1.5b-instruct" not in unloaded
+    assert "vibethinker-1.5b" not in unloaded
     assert set(unloaded) == {"ornstein3.6-35b-a3b"}
 
 

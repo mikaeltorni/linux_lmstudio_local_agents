@@ -66,19 +66,19 @@ def test_consumer_selection_writes_customized_catalog(tmp_path):
     """LMSTUDIO_INSTALL_MODELS installs only the named models in the catalog."""
     proc = _run(
         tmp_path,
-        'export LMSTUDIO_INSTALL_MODELS="qwen-coder ornstein"',
+        'export LMSTUDIO_INSTALL_MODELS="vibethinker ornstein"',
         call="install_models",
     )
     assert proc.returncode == 0, proc.stderr
     catalog = _catalog(tmp_path)
     installed = [p["id"] for p in catalog["profiles"] if p["default_install"]]
-    assert set(installed) == {"qwen-coder", "ornstein"}
+    assert set(installed) == {"vibethinker", "ornstein"}
     main = [p["id"] for p in catalog["profiles"] if p["default_main"]]
     assert main == ["ornstein"]
-    # Switch command exists for Ornstein; keep-on qwen has no switch command.
+    # Switch command exists for Ornstein; keep-on vibethinker has no switch command.
     bin_dir = tmp_path / ".local/bin"
     assert (bin_dir / "ornstein").exists()
-    assert not (bin_dir / "qwencoder").exists()
+    assert not (bin_dir / "vibethinker").exists()
     # Core tools are installed regardless.
     assert (bin_dir / "lmstudio-models").exists()
     assert (bin_dir / "lmstudio-model").exists()
@@ -88,17 +88,17 @@ def test_serve_preserves_customized_catalog(tmp_path):
     """Running serve after a customized models install must not reset the catalog."""
     first = _run(
         tmp_path,
-        'export LMSTUDIO_INSTALL_MODELS="qwen-coder"',
+        'export LMSTUDIO_INSTALL_MODELS="vibethinker"',
         call="install_models",
     )
     assert first.returncode == 0, first.stderr
     before = _catalog(tmp_path)
-    assert {p["id"] for p in before["profiles"] if p["default_install"]} == {"qwen-coder"}
+    assert {p["id"] for p in before["profiles"] if p["default_install"]} == {"vibethinker"}
 
     second = _run(tmp_path, "", call="configure_serving")
     assert second.returncode == 0, second.stderr
     after = _catalog(tmp_path)
-    assert {p["id"] for p in after["profiles"] if p["default_install"]} == {"qwen-coder"}
+    assert {p["id"] for p in after["profiles"] if p["default_install"]} == {"vibethinker"}
 
 
 def test_empty_selection_writes_core_only_catalog(tmp_path):
@@ -117,7 +117,7 @@ def test_empty_selection_writes_core_only_catalog(tmp_path):
     catalog = _catalog(tmp_path)
     assert not any(p["default_install"] for p in catalog["profiles"])
     bin_dir = tmp_path / ".local/bin"
-    for cmd in ("ornstein", "qwencoder"):
+    for cmd in ("ornstein", "vibethinker"):
         assert not (bin_dir / cmd).exists()
     # The serving tools are still installed — the core is intact.
     assert (bin_dir / "lmstudio-models").exists()
@@ -154,4 +154,4 @@ def test_default_path_installs_full_catalog(tmp_path):
     assert proc.returncode == 0, proc.stderr
     catalog = _catalog(tmp_path)
     installed = {p["id"] for p in catalog["profiles"] if p["default_install"]}
-    assert installed == {"qwen-coder", "ornstein"}
+    assert installed == {"vibethinker", "ornstein"}

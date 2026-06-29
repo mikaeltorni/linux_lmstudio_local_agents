@@ -38,7 +38,7 @@ default (non-interactive) install ships these fields ready to go:
 
 | Model | Role | Default |
 |---|---|---|
-| `qwen-coder` (Qwen2.5 Coder 1.5B) | editor autocomplete | **kept on** (`LMSTUDIO_USE_QWEN_CODER`) |
+| `vibethinker` (VibeThinker 1.5B) | editor autocomplete | **kept on** (`LMSTUDIO_USE_VIBETHINKER`) |
 | `ornstein` (Ornstein 3.6 35B-A3B) | primary coding agent | **main** (`LMSTUDIO_USE_ORNSTEIN`, `LMSTUDIO_MAIN_MODEL`) |
 
 At runtime the active main model is resolved by precedence: the first model whose
@@ -56,7 +56,7 @@ Installs and runs **standalone**; siblings below only enhance it.
   (its local Codex/Qwen agents talk to this server) and
   [`linux_programming_setup`](https://github.com/mikaeltorni/linux_programming_setup)
   (its Continue editor autocomplete depends on this repo to install only the
-  `qwen-coder` model). Neither is required for this repo to function.
+  `vibethinker` model). Neither is required for this repo to function.
 
 See the full cross-repository map in
 [installation_scripts/DEPENDENCIES.md](https://github.com/mikaeltorni/installation_scripts/blob/master/DEPENDENCIES.md).

@@ -2,7 +2,7 @@
 """Tests for the LM Studio model registry and resolution logic.
 
 These exercise the pure planning/resolution helpers against the real registry in
-configs/lmstudio/model-profiles.json, so the shipped default layout (qwen-coder
+configs/lmstudio/model-profiles.json, so the shipped default layout (vibethinker
 kept on and Ornstein main) is locked in, plus the env-var switching
 precedence and the validation rules.
 """
@@ -64,8 +64,8 @@ def test_main_env_var_default_and_value(registry, tmp_path):
 
 def test_find_profile_by_id_command_and_key(registry):
     """Profiles resolve by id, command alias, and model key."""
-    assert lm.find_profile(registry, "qwen-coder")["id"] == "qwen-coder"
-    assert lm.find_profile(registry, "qwencoder")["id"] == "qwen-coder"
+    assert lm.find_profile(registry, "vibethinker")["id"] == "vibethinker"
+    assert lm.find_profile(registry, "vibethinker")["id"] == "vibethinker"
     assert lm.find_profile(registry, "ornstein3.6-35b-a3b")["id"] == "ornstein"
     assert lm.find_profile(registry, "nope") is None
 
@@ -73,20 +73,20 @@ def test_find_profile_by_id_command_and_key(registry):
 def test_default_plan_matches_shipped_layout(registry):
     """The default plan encodes the user's required default model layout."""
     plan = lm.default_plan(registry)
-    assert set(plan.install_ids) == {"qwen-coder", "ornstein"}
-    assert plan.keep_on_ids == ("qwen-coder",)
+    assert set(plan.install_ids) == {"vibethinker", "ornstein"}
+    assert plan.keep_on_ids == ("vibethinker",)
     assert plan.main_id == "ornstein"
     assert plan.main_env_var == "LMSTUDIO_MAIN_MODEL"
     assert plan.switch_env_vars == {
-        "qwen-coder": "LMSTUDIO_USE_QWEN_CODER",
+        "vibethinker": "LMSTUDIO_USE_VIBETHINKER",
         "ornstein": "LMSTUDIO_USE_ORNSTEIN",
     }
 
 
 def test_default_plan_keep_on_model_keys(registry):
-    """Keep-on resolves to the qwen coder model key."""
+    """Keep-on resolves to the vibethinker model key."""
     plan = lm.default_plan(registry)
-    assert plan.keep_on_model_keys(registry) == ["qwen2.5-coder-1.5b-instruct"]
+    assert plan.keep_on_model_keys(registry) == ["vibethinker-1.5b"]
 
 
 def test_resolve_active_main_defaults_to_ornstein(registry):
@@ -98,31 +98,31 @@ def test_resolve_active_main_defaults_to_ornstein(registry):
 def test_resolve_active_main_switch_var_wins(registry):
     """A truthy per-model switch variable switches the active main model."""
     plan = lm.default_plan(registry)
-    active = lm.resolve_active_main(registry, plan, env={"LMSTUDIO_USE_QWEN_CODER": "1"})
-    assert active["model_key"] == "qwen2.5-coder-1.5b-instruct"
+    active = lm.resolve_active_main(registry, plan, env={"LMSTUDIO_USE_VIBETHINKER": "1"})
+    assert active["model_key"] == "vibethinker-1.5b"
 
 
 def test_resolve_active_main_switch_var_precedence_is_registry_order(registry):
     """When multiple switch vars are set, the first in registry order wins."""
     plan = lm.default_plan(registry)
     active = lm.resolve_active_main(
-        registry, plan, env={"LMSTUDIO_USE_QWEN_CODER": "yes", "LMSTUDIO_USE_ORNSTEIN": "on"}
+        registry, plan, env={"LMSTUDIO_USE_VIBETHINKER": "yes", "LMSTUDIO_USE_ORNSTEIN": "on"}
     )
-    assert active["model_key"] == "qwen2.5-coder-1.5b-instruct"
+    assert active["model_key"] == "vibethinker-1.5b"
 
 
 def test_resolve_active_main_main_env_var_names_model(registry):
     """LMSTUDIO_MAIN_MODEL selects an installed model when no switch var is set."""
     plan = lm.default_plan(registry)
-    active = lm.resolve_active_main(registry, plan, env={"LMSTUDIO_MAIN_MODEL": "qwen-coder"})
-    assert active["model_key"] == "qwen2.5-coder-1.5b-instruct"
+    active = lm.resolve_active_main(registry, plan, env={"LMSTUDIO_MAIN_MODEL": "vibethinker"})
+    assert active["model_key"] == "vibethinker-1.5b"
 
 
 def test_resolve_active_main_switch_var_beats_main_env_var(registry):
     """A per-model switch var takes precedence over LMSTUDIO_MAIN_MODEL."""
     plan = lm.default_plan(registry)
     active = lm.resolve_active_main(
-        registry, plan, env={"LMSTUDIO_MAIN_MODEL": "qwen-coder", "LMSTUDIO_USE_ORNSTEIN": "1"}
+        registry, plan, env={"LMSTUDIO_MAIN_MODEL": "vibethinker", "LMSTUDIO_USE_ORNSTEIN": "1"}
     )
     assert active["model_key"] == "ornstein3.6-35b-a3b"
 
@@ -132,15 +132,15 @@ def test_resolve_active_main_ignores_uninstalled_main_env_target(registry):
     plan = lm.build_plan(
         registry, install_ids=["ornstein"], keep_on_ids=[], main_id="ornstein"
     )
-    active = lm.resolve_active_main(registry, plan, env={"LMSTUDIO_MAIN_MODEL": "qwen-coder"})
+    active = lm.resolve_active_main(registry, plan, env={"LMSTUDIO_MAIN_MODEL": "vibethinker"})
     assert active["model_key"] == "ornstein3.6-35b-a3b"
 
 
 def test_falsey_switch_var_does_not_switch(registry):
     """A non-truthy switch value does not change the active model."""
     plan = lm.default_plan(registry)
-    assert lm.resolve_active_main(registry, plan, env={"LMSTUDIO_USE_QWEN_CODER": "0"})["model_key"] == "ornstein3.6-35b-a3b"
-    assert lm.resolve_active_main(registry, plan, env={"LMSTUDIO_USE_QWEN_CODER": ""})["model_key"] == "ornstein3.6-35b-a3b"
+    assert lm.resolve_active_main(registry, plan, env={"LMSTUDIO_USE_VIBETHINKER": "0"})["model_key"] == "ornstein3.6-35b-a3b"
+    assert lm.resolve_active_main(registry, plan, env={"LMSTUDIO_USE_VIBETHINKER": ""})["model_key"] == "ornstein3.6-35b-a3b"
 
 
 def test_build_plan_rejects_empty_install(registry):
@@ -158,26 +158,26 @@ def test_build_plan_rejects_unknown_id(registry):
 def test_build_plan_rejects_keep_on_not_installed(registry):
     """Keep-on models must be part of the install set."""
     with pytest.raises(ValueError):
-        lm.build_plan(registry, install_ids=["ornstein"], keep_on_ids=["qwen-coder"], main_id="ornstein")
+        lm.build_plan(registry, install_ids=["ornstein"], keep_on_ids=["vibethinker"], main_id="ornstein")
 
 
 def test_build_plan_rejects_main_not_installed(registry):
     """The main model must be part of the install set."""
     with pytest.raises(ValueError):
-        lm.build_plan(registry, install_ids=["qwen-coder"], keep_on_ids=["qwen-coder"], main_id="ornstein")
+        lm.build_plan(registry, install_ids=["vibethinker"], keep_on_ids=["vibethinker"], main_id="ornstein")
 
 
 def test_build_plan_switch_var_override(registry):
     """Explicit switch-var overrides win over the registry defaults."""
     plan = lm.build_plan(
         registry,
-        install_ids=["qwen-coder", "ornstein"],
+        install_ids=["vibethinker", "ornstein"],
         keep_on_ids=[],
         main_id="ornstein",
-        switch_env_vars={"qwen-coder": "LMSTUDIO_BACKUP"},
+        switch_env_vars={"vibethinker": "LMSTUDIO_BACKUP"},
     )
-    assert plan.switch_env_vars["qwen-coder"] == "LMSTUDIO_BACKUP"
-    assert lm.resolve_active_main(registry, plan, env={"LMSTUDIO_BACKUP": "1"})["model_key"] == "qwen2.5-coder-1.5b-instruct"
+    assert plan.switch_env_vars["vibethinker"] == "LMSTUDIO_BACKUP"
+    assert lm.resolve_active_main(registry, plan, env={"LMSTUDIO_BACKUP": "1"})["model_key"] == "vibethinker-1.5b"
 
 
 def test_cli_active_main_and_keep_on(registry, capsys):
@@ -185,7 +185,7 @@ def test_cli_active_main_and_keep_on(registry, capsys):
     assert lm.main(["active-main", "--catalog", str(CATALOG)]) == 0
     assert capsys.readouterr().out.strip() == "ornstein3.6-35b-a3b"
     assert lm.main(["keep-on", "--catalog", str(CATALOG)]) == 0
-    assert capsys.readouterr().out.strip() == "qwen2.5-coder-1.5b-instruct"
+    assert capsys.readouterr().out.strip() == "vibethinker-1.5b"
 
 
 def test_cli_default_plan_json(capsys):
@@ -193,7 +193,7 @@ def test_cli_default_plan_json(capsys):
     assert lm.main(["default-plan", "--catalog", str(CATALOG)]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["main_id"] == "ornstein"
-    assert payload["keep_on_ids"] == ["qwen-coder"]
+    assert payload["keep_on_ids"] == ["vibethinker"]
 
 
 def test_boot_load_specs_default_order(registry):
@@ -201,7 +201,7 @@ def test_boot_load_specs_default_order(registry):
     plan = lm.default_plan(registry)
     specs = lm.boot_load_specs(registry, plan, env={})
     keys = [spec["model_key"] for spec in specs]
-    assert keys == ["qwen2.5-coder-1.5b-instruct", "ornstein3.6-35b-a3b"]
+    assert keys == ["vibethinker-1.5b", "ornstein3.6-35b-a3b"]
     # Each spec carries the lms load flags.
     assert set(lm.BOOT_LOAD_FIELDS).issubset(specs[0].keys())
     assert specs[0]["gpu"] == "off" and specs[1]["gpu"] == "max"
@@ -211,49 +211,49 @@ def test_boot_load_specs_follows_switch_var(registry):
     """A switch var changes the main model loaded after the keep-on models."""
     plan = lm.default_plan(registry)
     specs = lm.boot_load_specs(registry, plan, env={"LMSTUDIO_USE_ORNSTEIN": "1"})
-    assert [spec["model_key"] for spec in specs] == ["qwen2.5-coder-1.5b-instruct", "ornstein3.6-35b-a3b"]
+    assert [spec["model_key"] for spec in specs] == ["vibethinker-1.5b", "ornstein3.6-35b-a3b"]
 
 
 def test_boot_load_specs_no_duplicate_when_main_is_keep_on(registry):
     """If the active main is also a keep-on model it is not loaded twice."""
     plan = lm.build_plan(
-        registry, install_ids=["qwen-coder"], keep_on_ids=["qwen-coder"], main_id="qwen-coder"
+        registry, install_ids=["vibethinker"], keep_on_ids=["vibethinker"], main_id="vibethinker"
     )
     specs = lm.boot_load_specs(registry, plan, env={})
-    assert [spec["model_key"] for spec in specs] == ["qwen2.5-coder-1.5b-instruct"]
+    assert [spec["model_key"] for spec in specs] == ["vibethinker-1.5b"]
 
 
 def test_installable_ids_default_is_all_default_install(registry):
     """With no selection, every default_install model is installable."""
-    assert set(lm.installable_ids(registry)) == {"qwen-coder", "ornstein"}
+    assert set(lm.installable_ids(registry)) == {"vibethinker", "ornstein"}
 
 
 def test_installable_ids_honors_selection(registry):
     """A selection installs only the named models (programming-setup case)."""
-    assert lm.installable_ids(registry, ["qwen-coder"]) == ["qwen-coder"]
+    assert lm.installable_ids(registry, ["vibethinker"]) == ["vibethinker"]
 
 
 def test_installable_ids_rejects_unknown(registry):
     """An unknown id in the selection raises."""
     with pytest.raises(ValueError):
-        lm.installable_ids(registry, ["qwen-coder", "nope"])
+        lm.installable_ids(registry, ["vibethinker", "nope"])
 
 
-def test_download_specs_only_qwen_coder(registry):
-    """download_specs for the qwen-coder selection yields just that model."""
-    specs = lm.download_specs(registry, ["qwen-coder"])
-    assert [spec["id"] for spec in specs] == ["qwen-coder"]
-    assert specs[0]["model_path"] == "unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF/Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf"
+def test_download_specs_only_vibethinker(registry):
+    """download_specs for the vibethinker selection yields just that model."""
+    specs = lm.download_specs(registry, ["vibethinker"])
+    assert [spec["id"] for spec in specs] == ["vibethinker"]
+    assert specs[0]["model_path"] == "mradermacher/VibeThinker-1.5B-GGUF/VibeThinker-1.5B.Q4_K_M.gguf"
     assert set(lm.DOWNLOAD_FIELDS).issubset(specs[0].keys())
 
 
 def test_cli_download_list_honors_env(registry, capsys, monkeypatch):
     """download-list restricts output to LMSTUDIO_INSTALL_MODELS when set."""
-    monkeypatch.setenv("LMSTUDIO_INSTALL_MODELS", "qwen-coder")
+    monkeypatch.setenv("LMSTUDIO_INSTALL_MODELS", "vibethinker")
     assert lm.main(["download-list", "--catalog", str(CATALOG)]) == 0
     lines = [line for line in capsys.readouterr().out.splitlines() if line.strip()]
     assert len(lines) == 1
-    assert lines[0].split("\t")[0] == "qwen-coder"
+    assert lines[0].split("\t")[0] == "vibethinker"
 
 
 def test_cli_download_list_default_lists_all(registry, capsys, monkeypatch):
@@ -261,7 +261,7 @@ def test_cli_download_list_default_lists_all(registry, capsys, monkeypatch):
     monkeypatch.delenv("LMSTUDIO_INSTALL_MODELS", raising=False)
     assert lm.main(["download-list", "--catalog", str(CATALOG)]) == 0
     ids = {line.split("\t")[0] for line in capsys.readouterr().out.splitlines() if line.strip()}
-    assert ids == {"qwen-coder", "ornstein"}
+    assert ids == {"vibethinker", "ornstein"}
 
 
 # --- Custom model normalization -------------------------------------------------
@@ -303,37 +303,37 @@ def test_apply_selection_default_layout_roundtrips(registry):
     """Selecting both shipped models with autostart reproduces default_plan."""
     customized = lm.apply_install_selection(
         registry,
-        selected_ids=["qwen-coder", "ornstein"],
-        autostart_ids=["qwen-coder", "ornstein"],
+        selected_ids=["vibethinker", "ornstein"],
+        autostart_ids=["vibethinker", "ornstein"],
     )
     plan = lm.default_plan(customized)
     assert plan.main_id == "ornstein"
-    assert plan.keep_on_ids == ("qwen-coder",)    # autostart minus main
-    assert set(plan.install_ids) == {"qwen-coder", "ornstein"}
+    assert plan.keep_on_ids == ("vibethinker",)    # autostart minus main
+    assert set(plan.install_ids) == {"vibethinker", "ornstein"}
 
 
 def test_apply_selection_subset_reassigns_main(registry):
     """Dropping the default main reassigns it to the selected keep-on model."""
     customized = lm.apply_install_selection(
         registry,
-        selected_ids=["qwen-coder"],
-        autostart_ids=["qwen-coder"],
+        selected_ids=["vibethinker"],
+        autostart_ids=["vibethinker"],
     )
     plan = lm.default_plan(customized)
-    assert plan.main_id == "qwen-coder"
+    assert plan.main_id == "vibethinker"
 
 
 def test_apply_selection_not_autostarted_is_not_boot_loaded(registry):
     """A selected-but-not-autostarted model is installed but not loaded at boot."""
     customized = lm.apply_install_selection(
         registry,
-        selected_ids=["qwen-coder", "ornstein"],
+        selected_ids=["vibethinker", "ornstein"],
         autostart_ids=["ornstein"],
     )
     plan = lm.default_plan(customized)
     specs = lm.boot_load_specs(customized, plan, env={})
     keys = [s["model_key"] for s in specs]
-    assert "qwen2.5-coder-1.5b-instruct" not in keys
+    assert "vibethinker-1.5b" not in keys
     assert "ornstein3.6-35b-a3b" in keys
 
 
@@ -361,7 +361,7 @@ def test_apply_selection_rejects_unknown_and_unselected_autostart(registry):
         lm.apply_install_selection(registry, selected_ids=["nope"], autostart_ids=[])
     with pytest.raises(ValueError):
         lm.apply_install_selection(
-            registry, selected_ids=["qwen-coder"], autostart_ids=["ornstein"]
+            registry, selected_ids=["vibethinker"], autostart_ids=["ornstein"]
         )
 
 
@@ -385,13 +385,13 @@ def test_cli_apply_selection_writes_catalog(registry, tmp_path, capsys):
     """The apply-selection CLI emits a customized catalog from a selection file."""
     selection = tmp_path / "sel.json"
     selection.write_text(json.dumps({
-        "selected_ids": ["qwen-coder"],
-        "autostart_ids": ["qwen-coder"],
+        "selected_ids": ["vibethinker"],
+        "autostart_ids": ["vibethinker"],
     }), encoding="utf-8")
     assert lm.main([
         "apply-selection", "--catalog", str(CATALOG), "--selection", str(selection)
     ]) == 0
     out = json.loads(capsys.readouterr().out)
     installed = [p["id"] for p in out["profiles"] if p["default_install"]]
-    assert installed == ["qwen-coder"]
-    assert lm.default_plan(out).main_id == "qwen-coder"
+    assert installed == ["vibethinker"]
+    assert lm.default_plan(out).main_id == "vibethinker"
