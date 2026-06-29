@@ -61,6 +61,7 @@ class SelectionState:
                 "install": install,
                 "autostart": autostart,
                 "custom": bool(profile.get("custom")),
+                "switch_env_var": profile.get("switch_env_var", ""),
                 "profile": profile if profile.get("custom") else None,
             })
 
@@ -113,6 +114,7 @@ class SelectionState:
             "install": True,
             "autostart": True,
             "custom": True,
+            "switch_env_var": profile.get("switch_env_var", ""),
             "profile": profile,
         })
         return profile
@@ -136,7 +138,10 @@ def render(state: SelectionState) -> str:
         inst = "x" if row["install"] else " "
         auto = "boot" if row["autostart"] else "    "
         tag = " (custom)" if row["custom"] else ""
-        lines.append(f"   {i:>2}. [{inst}] [{auto}] {row['label']}{tag}")
+        switch = (
+            f"  [env: {row['switch_env_var']}]" if row.get("switch_env_var") else ""
+        )
+        lines.append(f"   {i:>2}. [{inst}] [{auto}] {row['label']}{tag}{switch}")
     lines += [
         "",
         "  Commands: <n> toggle install · b<n> toggle autostart · a add your own model",
@@ -154,8 +159,14 @@ def _prompt_custom(reader, writer) -> dict | None:
         return None
     model_key = reader("    lms model key (as `lms load` names it): ").strip()
     url = reader("    Download URL (.gguf, blank to skip download): ").strip()
+    switch_env_var = reader(
+        "    Switch environment variable (blank = derive LMSTUDIO_USE_*): "
+    ).strip()
     sha = reader("    sha256 (optional, blank to skip verify): ").strip()
-    return {"name": name, "model_key": model_key, "download_url": url, "sha256": sha}
+    spec = {"name": name, "model_key": model_key, "download_url": url, "sha256": sha}
+    if switch_env_var:
+        spec["switch_env_var"] = switch_env_var
+    return spec
 
 
 def run_menu(profiles: list[dict], *, reader=input, writer=None) -> dict:

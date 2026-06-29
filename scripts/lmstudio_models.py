@@ -26,9 +26,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse
 
 #: Environment values treated as "on" for switch variables.
 TRUTHY = {"1", "true", "yes", "y", "on"}
@@ -342,8 +344,6 @@ def slugify_id(value: str) -> str:
         str: Lowercased value with runs of non-alphanumeric characters collapsed
         to single dashes and leading/trailing dashes stripped.
     """
-    import re
-
     slug = re.sub(r"[^a-z0-9]+", "-", str(value).strip().lower()).strip("-")
     return slug
 
@@ -357,8 +357,6 @@ def switch_env_var_for(model_id: str) -> str:
     Returns:
         str: ``LMSTUDIO_USE_<UPPER>`` with non-alphanumerics turned into ``_``.
     """
-    import re
-
     suffix = re.sub(r"[^A-Z0-9]+", "_", str(model_id).upper()).strip("_")
     return f"LMSTUDIO_USE_{suffix}"
 
@@ -401,6 +399,13 @@ def normalize_custom_profile(spec: dict) -> dict:
         raise ValueError("a custom model needs a name")
     model_key = (spec.get("model_key") or "").strip() or model_id
     download_url = (spec.get("download_url") or "").strip()
+    if download_url:
+        parsed_url = urlparse(download_url)
+        if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
+            raise ValueError("custom model download URL must be an HTTP(S) URL")
+    sha256 = str(spec.get("sha256") or "").strip()
+    if sha256 and not re.fullmatch(r"[A-Fa-f0-9]{64}", sha256):
+        raise ValueError("custom model sha256 must contain exactly 64 hexadecimal characters")
     model_path = (spec.get("model_path") or "").strip()
     if not model_path:
         if download_url:
@@ -408,6 +413,13 @@ def normalize_custom_profile(spec: dict) -> dict:
             model_path = f"{model_id}/{base}" if base else f"{model_id}.gguf"
         else:
             model_path = f"{model_id}.gguf"
+
+    if "switch_env_var" in spec:
+        switch_env_var = str(spec.get("switch_env_var") or "").strip()
+    else:
+        switch_env_var = switch_env_var_for(model_id)
+    if switch_env_var and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", switch_env_var):
+        raise ValueError(f"invalid switch environment variable: {switch_env_var}")
 
     profile = dict(CUSTOM_PROFILE_DEFAULTS)
     profile.update({
@@ -417,17 +429,64 @@ def normalize_custom_profile(spec: dict) -> dict:
         "model_key": model_key,
         "download_url": download_url,
         "model_path": model_path,
-        "switch_env_var": spec.get("switch_env_var") or switch_env_var_for(model_id),
+        "switch_env_var": switch_env_var,
         "default_install": True,
         "default_keep_on": False,
         "default_main": False,
         "custom": True,
     })
     # Allow explicit serving-flag overrides from the spec.
-    for key in ("gpu", "context_length", "parallel", "ttl", "identifier", "sha256"):
+    for key in ("gpu", "context_length", "parallel", "ttl", "identifier"):
         if spec.get(key) not in (None, ""):
             profile[key] = spec[key]
+    if sha256:
+        profile["sha256"] = sha256.lower()
     return profile
+
+
+def custom_install_selection(registry: dict, spec: dict, *, role: str) -> dict:
+    """Build an additive selection payload for one consumer-supplied model.
+
+    Args:
+        registry: The user's current catalog, whose installed models are kept.
+        spec: Custom model fields accepted by normalize_custom_profile.
+        role: main for a switchable coding model or keep-on for an always-loaded
+            autocomplete model.
+
+    Returns:
+        dict: Selection payload accepted by apply_install_selection.
+
+    Raises:
+        ValueError: When role is unsupported or the custom profile is invalid.
+    """
+    if role not in {"main", "keep-on"}:
+        raise ValueError(f"unsupported custom model role: {role}")
+    custom = normalize_custom_profile(spec)
+    selected = [
+        profile["id"] for profile in profiles(registry)
+        if profile.get("default_install") and profile["id"] != custom["id"]
+    ]
+    selected.append(custom["id"])
+    autostart = [
+        profile["id"] for profile in profiles(registry)
+        if profile.get("default_install")
+        and (profile.get("default_keep_on") or profile.get("default_main"))
+        and profile["id"] != custom["id"]
+    ]
+    autostart.append(custom["id"])
+    current_main = next(
+        (
+            profile["id"] for profile in profiles(registry)
+            if profile.get("default_install") and profile.get("default_main")
+        ),
+        None,
+    )
+    return {
+        "selected_ids": selected,
+        "autostart_ids": autostart,
+        "main_id": custom["id"] if role == "main" else current_main,
+        "custom_profiles": [custom],
+    }
 
 
 def apply_install_selection(
@@ -528,7 +587,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="LM Studio local-agent model resolution.")
     parser.add_argument(
         "command",
-        choices=["active-main", "keep-on", "boot-load", "download-list", "default-plan", "apply-selection"],
+        choices=["active-main", "keep-on", "boot-load", "download-list", "default-plan", "apply-selection", "custom-selection"],
     )
     parser.add_argument("--catalog", type=Path, required=True)
     parser.add_argument(
@@ -536,9 +595,33 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         help="apply-selection: JSON file with selected_ids/autostart_ids/main_id/custom_profiles.",
     )
+    parser.add_argument("--name", default="", help="custom-selection: display name/id.")
+    parser.add_argument("--model-key", default="", help="custom-selection: lms model key.")
+    parser.add_argument("--download-url", default="", help="custom-selection: GGUF URL.")
+    parser.add_argument("--sha256", default="", help="custom-selection: optional checksum.")
+    parser.add_argument(
+        "--switch-env-var",
+        default=None,
+        help="custom-selection: switch variable; pass an empty value for none.",
+    )
+    parser.add_argument(
+        "--role", choices=["main", "keep-on"], default="main",
+        help="custom-selection: runtime role.",
+    )
     args = parser.parse_args(argv)
 
     registry = load_registry(args.catalog)
+    if args.command == "custom-selection":
+        spec = {
+            "name": args.name,
+            "model_key": args.model_key,
+            "download_url": args.download_url,
+            "sha256": args.sha256,
+        }
+        if args.switch_env_var is not None:
+            spec["switch_env_var"] = args.switch_env_var
+        print(json.dumps(custom_install_selection(registry, spec, role=args.role), indent=2))
+        return 0
     if args.command == "apply-selection":
         raw = (args.selection.read_text(encoding="utf-8") if args.selection
                else sys.stdin.read())

@@ -61,6 +61,9 @@ def test_initial_state_matches_shipped_defaults(profiles):
     sel = state.selection()
     assert set(sel["selected_ids"]) == {"vibethinker", "ornstein"}
     assert set(sel["autostart_ids"]) == {"vibethinker", "ornstein"}
+    rendered = menu.render(state)
+    assert "LMSTUDIO_USE_VIBETHINKER" in rendered
+    assert "LMSTUDIO_USE_ORNSTEIN" in rendered
 
 
 def test_toggle_install_clears_autostart(profiles):
@@ -99,6 +102,7 @@ def test_run_menu_add_custom_model(profiles):
         "Tiny Llama 1B",              # name
         "tinyllama-1b",               # model key
         "https://example.com/T.gguf", # url
+        "USE_TINY_LLAMA",             # switch environment variable
         "",                            # sha256 (skip)
         "",                            # done
     ])
@@ -106,6 +110,7 @@ def test_run_menu_add_custom_model(profiles):
     assert sel["selected_ids"] == ["tiny-llama-1b"]
     assert sel["autostart_ids"] == ["tiny-llama-1b"]
     assert sel["custom_profiles"][0]["model_key"] == "tinyllama-1b"
+    assert sel["custom_profiles"][0]["switch_env_var"] == "USE_TINY_LLAMA"
     # The whole selection feeds apply_install_selection cleanly.
     customized = lm.apply_install_selection(lm.load_registry(CATALOG), **sel)
     assert lm.default_plan(customized).main_id == "tiny-llama-1b"

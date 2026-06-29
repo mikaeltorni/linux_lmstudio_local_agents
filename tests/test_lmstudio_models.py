@@ -290,6 +290,81 @@ def test_normalize_custom_profile_derives_fields():
     assert profile["sha256"] == ""
 
 
+def test_normalize_custom_profile_accepts_explicit_or_empty_switch_variable():
+    """Coding models can name a switch variable; keep-on models can omit one."""
+    explicit = lm.normalize_custom_profile({
+        "name": "Agent Model",
+        "model_key": "agent-model",
+        "switch_env_var": "USE_AGENT_MODEL",
+    })
+    keep_on = lm.normalize_custom_profile({
+        "name": "Autocomplete Model",
+        "model_key": "autocomplete-model",
+        "switch_env_var": "",
+    })
+
+    assert explicit["switch_env_var"] == "USE_AGENT_MODEL"
+    assert keep_on["switch_env_var"] == ""
+
+
+def test_normalize_custom_profile_rejects_invalid_switch_variable():
+    """Shell environment variable names must be validated before catalog writes."""
+    with pytest.raises(ValueError, match="environment variable"):
+        lm.normalize_custom_profile({
+            "name": "Agent Model",
+            "model_key": "agent-model",
+            "switch_env_var": "NOT-VALID",
+        })
+
+
+def test_normalize_custom_profile_validates_download_url_and_checksum():
+    """Custom downloads accept HTTP(S) URLs and exact SHA-256 values only."""
+    with pytest.raises(ValueError, match=r"HTTP\(S\)"):
+        lm.normalize_custom_profile({
+            "name": "Bad URL",
+            "model_key": "bad-url",
+            "download_url": "file:///etc/passwd",
+        })
+    with pytest.raises(ValueError, match="sha256"):
+        lm.normalize_custom_profile({
+            "name": "Bad Hash",
+            "model_key": "bad-hash",
+            "download_url": "https://example.com/model.gguf",
+            "sha256": "short",
+        })
+
+
+def test_custom_install_selection_preserves_models_and_applies_role(registry):
+    """An additive custom model can become main or a switch-free keep-on model."""
+    main_choice = lm.custom_install_selection(
+        registry,
+        {
+            "name": "My Agent",
+            "model_key": "my-agent",
+            "download_url": "https://example.com/my-agent.gguf",
+            "switch_env_var": "USE_MY_AGENT",
+        },
+        role="main",
+    )
+    main_catalog = lm.apply_install_selection(registry, **main_choice)
+    assert lm.default_plan(main_catalog).main_id == "my-agent"
+
+    keep_choice = lm.custom_install_selection(
+        registry,
+        {
+            "name": "My Autocomplete",
+            "model_key": "my-autocomplete",
+            "download_url": "https://example.com/my-autocomplete.gguf",
+            "switch_env_var": "",
+        },
+        role="keep-on",
+    )
+    keep_catalog = lm.apply_install_selection(registry, **keep_choice)
+    keep_plan = lm.default_plan(keep_catalog)
+    assert "my-autocomplete" in keep_plan.keep_on_ids
+    assert keep_plan.switch_env_vars["my-autocomplete"] == ""
+
+
 def test_normalize_custom_profile_requires_name():
     """A custom model with no usable name is rejected."""
     with pytest.raises(ValueError):

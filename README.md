@@ -11,8 +11,9 @@ and which the active "main" model switches to.
 This subsystem used to live inside
 [`agent_command_center`](https://github.com/mikaeltorni/agent_command_center); it
 now lives here as the single source of truth for local model serving. Agent
-Command Center and `linux_programming_setup` depend on it to provide the models
-they consume, but it installs and runs **standalone**.
+Codex/Claude setup and `linux_programming_setup` expose consumer-facing model
+choices that delegate here; Agent Command Center only consumes the running
+service. This repository still installs and runs **standalone**.
 
 ## Model switching model
 
@@ -22,7 +23,7 @@ carries three install-time fields:
 - **`switch_env_var`** — a per-model environment variable. Set it truthy and the
   active served model switches to that model (e.g. `LMSTUDIO_USE_ORNSTEIN=1`).
 - **`default_keep_on`** — the model is always kept loaded (it is not part of the
-  switchable "main" slot). The small CPU-resident Qwen coder is kept on by
+  switchable "main" slot). The small CPU-resident VibeThinker model is kept on by
   default so editor autocomplete is always available.
 - **`default_main`** — the model the top-level `main_env_var`
   (`LMSTUDIO_MAIN_MODEL`) resolves to, and the default active model when no
@@ -30,7 +31,9 @@ carries three install-time fields:
 
 On a terminal the `models` component opens an interactive menu where, per model,
 you toggle **install** and **autostart** (load at boot), and can **add your own
-model** by typing a name + `lms` model key + download URL. Your choices are
+model** by typing a name + `lms` model key + download URL + optional switch
+environment variable. The menu shows each model's switch variable beside it.
+Your choices are
 written into a customized catalog, so downloads, boot-load, and the per-model
 switch commands all follow exactly what you picked — a model you install but do
 not autostart is downloaded and runtime-switchable yet not loaded at boot. The
@@ -52,11 +55,12 @@ Installs and runs **standalone**; siblings below only enhance it.
 - **Build-time (soft):** the shared installer component framework
   [`linux_installation_scripts_functions`](https://github.com/mikaeltorni/linux_installation_scripts_functions) —
   loaded from a sibling checkout when present, otherwise downloaded on demand.
-- **Consumers:** [`agent_command_center`](https://github.com/mikaeltorni/agent_command_center)
-  (its local Codex/Qwen agents talk to this server) and
+- **Consumers:** [`linux_codex_claude_code_setup`](https://github.com/mikaeltorni/linux_codex_claude_code_setup)
+  exposes Ornstein and custom switchable coding models;
   [`linux_programming_setup`](https://github.com/mikaeltorni/linux_programming_setup)
-  (its Continue editor autocomplete depends on this repo to install only the
-  `vibethinker` model). Neither is required for this repo to function.
+  exposes VibeThinker and custom switch-free autocomplete models; and
+  [`agent_command_center`](https://github.com/mikaeltorni/agent_command_center)
+  talks to the resulting service. None is required for this repo to function.
 
 See the full cross-repository map in
 [installation_scripts/DEPENDENCIES.md](https://github.com/mikaeltorni/installation_scripts/blob/master/DEPENDENCIES.md).
@@ -95,6 +99,13 @@ installed LM Studio (root-only steps are skipped and reported).
 register any LLM models. Select it in the menu (or pass `--select
 lm_studio_app,serve,models`) when model installation is wanted; leave it off for
 core serving only.
+
+Consumer installers add custom profiles non-interactively with
+`LMSTUDIO_ADD_CUSTOM_MODEL=1` plus `LMSTUDIO_CUSTOM_MODEL_NAME`,
+`LMSTUDIO_CUSTOM_MODEL_KEY`, `LMSTUDIO_CUSTOM_MODEL_URL`, optional
+`LMSTUDIO_CUSTOM_MODEL_SHA256`, `LMSTUDIO_CUSTOM_MODEL_SWITCH_ENV_VAR`, and
+`LMSTUDIO_CUSTOM_MODEL_ROLE=main|keep-on`. A keep-on autocomplete profile may
+set the switch variable to an empty string.
 
 ## Tooling
 
