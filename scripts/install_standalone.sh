@@ -59,7 +59,7 @@ source "$SCRIPT_DIR/installer/components.sh"
 LMLA_INTERACTIVE=1
 for __lmla_arg in "$@"; do
   case "$__lmla_arg" in
-    --default|--all|--select|--select=*|--list-components|--help|-h) LMLA_INTERACTIVE=0 ;;
+    --default|--all|--select|--select=*|--list-components|--list-startup-components|--help|-h) LMLA_INTERACTIVE=0 ;;
   esac
 done
 export LMLA_INTERACTIVE
@@ -73,6 +73,7 @@ main() {
 
 # Listing/help must print only their own output (the master parses it).
 case "${1:-}" in
+  --list-startup-components) lmla_list_startup_components; exit $? ;;
   --list-components|--detect|--help|-h|--uninstall|--uninstall=*) component_main "$@"; exit $? ;;
 esac
 

@@ -91,14 +91,18 @@ installed LM Studio (root-only steps are skipped and reported).
 
 | id | description | default | role |
 |---|---|---|---|
-| `lm_studio_app` | LM Studio AppImage + CLI (root) | on | core |
-| `serve` | serve.env, boot script, and `lmstudio-serve.service` user service | on | core |
+| `lm_studio_app` | LM Studio AppImage + CLI (root) | on | Applications |
+| `serve` | serve.env, boot script, and `lmstudio-serve.service` user service | on | Serving |
 | `models` | Choose models to install + autostart, or add your own (interactive) | off | optional |
 
 `models` is default-off so a default or unattended install does not download or
 register any LLM models. Select it in the menu (or pass `--select
 lm_studio_app,serve,models`) when model installation is wanted; leave it off for
 core serving only.
+
+The LM Studio GUI is available through `[S]` on the `lm_studio_app` row in the
+master installer. It defaults off because `lmstudio-serve.service` provides
+headless model serving independently of the desktop application.
 
 Consumer installers add custom profiles non-interactively with
 `LMSTUDIO_ADD_CUSTOM_MODEL=1` plus `LMSTUDIO_CUSTOM_MODEL_NAME`,
