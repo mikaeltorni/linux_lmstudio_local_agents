@@ -159,6 +159,7 @@ lmla_custom_selection_from_env() {
     --name "${LMSTUDIO_CUSTOM_MODEL_NAME:-}"
     --model-key "${LMSTUDIO_CUSTOM_MODEL_KEY:-}"
     --download-url "${LMSTUDIO_CUSTOM_MODEL_URL:-}"
+    --source "${LMSTUDIO_CUSTOM_MODEL_SOURCE:-}"
     --sha256 "${LMSTUDIO_CUSTOM_MODEL_SHA256:-}"
     --role "${LMSTUDIO_CUSTOM_MODEL_ROLE:-main}"
   )
@@ -171,13 +172,36 @@ lmla_custom_selection_from_env() {
 # lmla_run_install_menu — run the interactive per-model selection menu on the
 # controlling terminal and print the resulting selection JSON to stdout.
 lmla_run_install_menu() {
-  local out
+  local out menu_catalog
   out="$(mktemp)"
+  menu_catalog="$(lmla_target_catalog)"
+  [ -f "$menu_catalog" ] || menu_catalog="$LMLA_CONFIG_DIR/model-profiles.json"
   python3 "$LMLA_DIR/scripts/lmstudio_install_menu.py" \
-    --catalog "$LMLA_CONFIG_DIR/model-profiles.json" --out "$out" \
+    --catalog "$menu_catalog" --out "$out" \
     <>/dev/tty >/dev/tty 2>&1 || true
   cat "$out"
   rm -f "$out"
+}
+
+# configure_models — open the repository-owned model detail screen and persist
+# its selection without downloading anything. Invoked by RIGHT from both the
+# standalone and aggregate component menus. LMLA_MODEL_SELECTION_JSON provides
+# a deterministic non-TTY path for tests and automation.
+configure_models() {
+  local selection="${LMLA_MODEL_SELECTION_JSON:-}"
+  lmla_install_assets
+  if [ -z "$selection" ]; then
+    if [ ! -t 0 ] || [ ! -t 1 ]; then
+      log "error" "model detail configuration requires a TTY or LMLA_MODEL_SELECTION_JSON"
+      return 2
+    fi
+    selection="$(lmla_run_install_menu)"
+  fi
+  [ -n "$selection" ] || return 1
+  lmla_write_selected_catalog_from "$selection" "$(lmla_target_catalog)"
+  LMLA_MODELS_CONFIGURED=1
+  export LMLA_MODELS_CONFIGURED
+  log "info" "Saved LM Studio model detail selection without starting downloads"
 }
 
 # lmla_write_selected_catalog — render a customized catalog from the shipped
@@ -217,7 +241,13 @@ lmla_download_models() {
   [ "${LMSTUDIO_DOWNLOAD_MODELS:-1}" = "1" ] || { msg "Skipping model downloads (LMSTUDIO_DOWNLOAD_MODELS=0)"; return 0; }
   local catalog
   catalog="$(lmla_target_catalog)"
-  while IFS=$'\t' read -r model_id download_url model_path sha256; do
+  while IFS=$'\t' read -r model_id download_url download_source model_path sha256; do
+    if [ -n "$download_source" ]; then
+      msg "Downloading LM Studio model from catalog: $model_id"
+      run_as_target env PATH="$TARGET_HOME/.lmstudio/bin:$TARGET_HOME/.local/bin:$PATH" \
+        lms get --gguf --yes "$download_source"
+      continue
+    fi
     [ -n "$download_url" ] || continue
     local model_file="$TARGET_HOME/.lmstudio/models/$model_path"
     if [ -n "$sha256" ]; then
@@ -327,12 +357,16 @@ install_models() {
     selection="$(lmla_custom_selection_from_env)"
   elif [ -n "${LMSTUDIO_ADD_MODELS:-}" ]; then
     selection="$(lmla_additive_selection_from_ids "$(lmla_target_catalog)" "$LMSTUDIO_ADD_MODELS" "${LMSTUDIO_MAIN_MODEL:-}")"
-  elif [ "${LMLA_INTERACTIVE:-0}" = "1" ] && [ -t 0 ] && [ -t 1 ]; then
+  elif [ "${LMLA_MODELS_CONFIGURED:-0}" != "1" ] \
+    && { [ "${LMLA_INTERACTIVE:-0}" = "1" ] || [ "${LMLA_CONFIGURE_MODELS:-0}" = "1" ]; } \
+    && [ -t 0 ] && [ -t 1 ]; then
     selection="$(lmla_run_install_menu)"
   fi
   if [ -n "$selection" ]; then
     if { [ -n "${LMSTUDIO_ADD_MODELS:-}" ] || [ "${LMSTUDIO_ADD_CUSTOM_MODEL:-0}" = "1" ]; } \
       && [ -z "${LMSTUDIO_INSTALL_MODELS:-}" ] && [ -f "$(lmla_target_catalog)" ]; then
+      lmla_write_selected_catalog_from "$selection" "$(lmla_target_catalog)"
+    elif [ "${LMLA_CONFIGURE_MODELS:-0}" = "1" ] && [ -f "$(lmla_target_catalog)" ]; then
       lmla_write_selected_catalog_from "$selection" "$(lmla_target_catalog)"
     else
       lmla_write_selected_catalog "$selection"

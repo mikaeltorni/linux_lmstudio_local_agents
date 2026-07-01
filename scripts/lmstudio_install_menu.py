@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -30,6 +31,15 @@ assert _spec and _spec.loader
 lmstudio_models = importlib.util.module_from_spec(_spec)
 sys.modules.setdefault("lmstudio_models", lmstudio_models)
 _spec.loader.exec_module(lmstudio_models)
+
+_shared_path = Path(os.environ.get("ISC_REPEATABLE_FIELDS_PY", ""))
+if not _shared_path.is_file():
+    _shared_path = Path(__file__).resolve().parents[2] / "linux_installation_scripts_functions" / "repeatable_fields.py"
+_rows_spec = importlib.util.spec_from_file_location("isc_repeatable_fields", _shared_path)
+if not _rows_spec or not _rows_spec.loader:
+    raise RuntimeError("shared repeatable_fields.py is unavailable")
+repeatable_fields = importlib.util.module_from_spec(_rows_spec)
+_rows_spec.loader.exec_module(repeatable_fields)
 
 
 class SelectionState:
@@ -49,13 +59,14 @@ class SelectionState:
                 initial install/autostart state so the menu opens on the shipped
                 layout.
         """
-        self.rows: list[dict] = []
+        self._state = repeatable_fields.RepeatableRows()
+        self.rows = self._state.items
         for profile in profiles:
             install = bool(profile.get("default_install"))
             autostart = install and bool(
                 profile.get("default_keep_on") or profile.get("default_main")
             )
-            self.rows.append({
+            self._state.add({
                 "id": profile["id"],
                 "label": profile.get("description") or profile["id"],
                 "install": install,
@@ -63,6 +74,7 @@ class SelectionState:
                 "custom": bool(profile.get("custom")),
                 "switch_env_var": profile.get("switch_env_var", ""),
                 "profile": profile if profile.get("custom") else None,
+                "group": int(profile.get("group") or 0),
             })
 
     def _row(self, index: int) -> dict | None:
@@ -89,6 +101,26 @@ class SelectionState:
         if row["autostart"]:
             row["install"] = True
 
+    def set_environment(self, index: int, value: str) -> None:
+        """Customize a row's validated switch environment variable."""
+        row = self._row(index)
+        if row is None:
+            return
+        candidate = lmstudio_models.normalize_custom_profile({
+            **(row.get("profile") or {"name": row["id"], "model_key": row["id"]}),
+            "switch_env_var": value,
+        })
+        row["switch_env_var"] = candidate["switch_env_var"]
+        if row.get("profile"):
+            row["profile"]["switch_env_var"] = candidate["switch_env_var"]
+
+    def set_group(self, index: int, group: int) -> None:
+        """Assign zero (ungrouped) or an exclusivity group number."""
+        if self._state.set_group(index, group):
+            row = self._row(index)
+            if row and row.get("profile"):
+                row["profile"]["group"] = group
+
     def set_all(self, install: bool) -> None:
         """Select or clear install on every row (autostart cleared when off)."""
         for row in self.rows:
@@ -106,9 +138,9 @@ class SelectionState:
         Returns:
             dict: The normalized profile that was added.
         """
-        profile = lmstudio_models.normalize_custom_profile(spec)
-        self.rows = [r for r in self.rows if r["id"] != profile["id"]]
-        self.rows.append({
+        profile = dict(spec) if spec.get("custom") else lmstudio_models.normalize_custom_profile(spec)
+        self.rows[:] = [r for r in self.rows if r["id"] != profile["id"]]
+        self._state.add({
             "id": profile["id"],
             "label": profile.get("description") or profile["id"],
             "install": True,
@@ -116,6 +148,7 @@ class SelectionState:
             "custom": True,
             "switch_env_var": profile.get("switch_env_var", ""),
             "profile": profile,
+            "group": int(profile.get("group") or 0),
         })
         return profile
 
@@ -141,10 +174,12 @@ def render(state: SelectionState) -> str:
         switch = (
             f"  [env: {row['switch_env_var']}]" if row.get("switch_env_var") else ""
         )
-        lines.append(f"   {i:>2}. [{inst}] [{auto}] {row['label']}{tag}{switch}")
+        group = f"  [group: {row['group']}]" if row.get("group") else ""
+        lines.append(f"   {i:>2}. [{inst}] [{auto}] {row['label']}{tag}{switch}{group}")
     lines += [
         "",
-        "  Commands: <n> toggle install · b<n> toggle autostart · a add your own model",
+        "  Commands: <n> toggle install · s<n> toggle startup · A add another URL/spec",
+        "            e<n> edit env variable · g<n> set exclusivity group (0 = none)",
         "            all / none · enter to install the selection",
         "",
     ]
@@ -152,21 +187,12 @@ def render(state: SelectionState) -> str:
 
 
 def _prompt_custom(reader, writer) -> dict | None:
-    """Prompt for the fields of a user-added model. Returns None if cancelled."""
-    writer("\n  Add your own model (blank name cancels).\n")
-    name = reader("    Name (e.g. 'Llama 3 8B'): ").strip()
-    if not name:
+    """Prompt for exactly one model source line. Returns None if cancelled."""
+    writer("\n  Add a model (blank cancels).\n")
+    source = reader("    Hugging Face URL or owner/model@quant: ").strip()
+    if not source:
         return None
-    model_key = reader("    lms model key (as `lms load` names it): ").strip()
-    url = reader("    Download URL (.gguf, blank to skip download): ").strip()
-    switch_env_var = reader(
-        "    Switch environment variable (blank = derive LMSTUDIO_USE_*): "
-    ).strip()
-    sha = reader("    sha256 (optional, blank to skip verify): ").strip()
-    spec = {"name": name, "model_key": model_key, "download_url": url, "sha256": sha}
-    if switch_env_var:
-        spec["switch_env_var"] = switch_env_var
-    return spec
+    return lmstudio_models.custom_profile_from_source(source)
 
 
 def run_menu(profiles: list[dict], *, reader=input, writer=None) -> dict:
@@ -209,8 +235,22 @@ def run_menu(profiles: list[dict], *, reader=input, writer=None) -> dict:
         if low == "none":
             state.set_all(False)
             continue
-        if low[:1] == "b" and low[1:].strip().isdigit():
+        if low[:1] in {"b", "s"} and low[1:].strip().isdigit():
             state.toggle_autostart(int(low[1:].strip()))
+            continue
+        if low[:1] == "e" and low[1:].strip().isdigit():
+            try:
+                value = reader("    Environment variable (blank disables switching): ").strip()
+                state.set_environment(int(low[1:].strip()), value)
+            except ValueError as exc:
+                writer(f"\n  Could not set environment variable: {exc}\n")
+            continue
+        if low[:1] == "g" and low[1:].strip().isdigit():
+            value = reader("    Group number (0 = none): ").strip()
+            if value.isdigit():
+                state.set_group(int(low[1:].strip()), int(value))
+            else:
+                writer("\n  Group must be a non-negative number.\n")
             continue
         if low.isdigit():
             state.toggle_install(int(low))

@@ -95,25 +95,34 @@ def test_run_menu_scripted_toggles(profiles):
 
 
 def test_run_menu_add_custom_model(profiles):
-    """The 'add' flow records a custom model, selected and autostarted."""
+    """A accepts one source line; E/G/S customize the resulting model row."""
     reader = _scripted_reader([
-        "none",                       # clear shipped selection
-        "a",                          # add custom
-        "Tiny Llama 1B",              # name
-        "tinyllama-1b",               # model key
-        "https://example.com/T.gguf", # url
-        "USE_TINY_LLAMA",             # switch environment variable
-        "",                            # sha256 (skip)
-        "",                            # done
+        "none",
+        "a",
+        "https://huggingface.co/acme/Tiny-Llama-GGUF@Q4_K_M",
+        "e3", "USE_TINY_LLAMA",
+        "g3", "2",
+        "s3",
+        "",
     ])
     sel = menu.run_menu(profiles, reader=reader, writer=_silent_writer)
-    assert sel["selected_ids"] == ["tiny-llama-1b"]
-    assert sel["autostart_ids"] == ["tiny-llama-1b"]
-    assert sel["custom_profiles"][0]["model_key"] == "tinyllama-1b"
+    assert sel["selected_ids"] == ["tiny-llama-gguf"]
+    assert sel["autostart_ids"] == []
+    assert sel["custom_profiles"][0]["model_key"] == "acme/Tiny-Llama-GGUF@Q4_K_M"
     assert sel["custom_profiles"][0]["switch_env_var"] == "USE_TINY_LLAMA"
+    assert sel["custom_profiles"][0]["group"] == 2
     # The whole selection feeds apply_install_selection cleanly.
     customized = lm.apply_install_selection(lm.load_registry(CATALOG), **sel)
-    assert lm.default_plan(customized).main_id == "tiny-llama-1b"
+    assert lm.default_plan(customized).main_id == "tiny-llama-gguf"
+
+
+def test_a_can_add_multiple_source_rows(profiles):
+    reader = _scripted_reader([
+        "none", "a", "owner/one@q4_k_m", "a", "owner/two@q5_k_m", "",
+    ])
+    sel = menu.run_menu(profiles, reader=reader, writer=_silent_writer)
+    assert sel["selected_ids"] == ["one", "two"]
+    assert len(sel["custom_profiles"]) == 2
 
 
 def test_run_menu_all_and_none(profiles):

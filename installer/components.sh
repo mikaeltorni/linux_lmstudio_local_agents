@@ -14,7 +14,7 @@ ISC_REPO_LABEL="LM Studio local agents"
 ISC_POSTFLIGHT="report_sudo_required"
 
 ISC_COMPONENTS=(
-  "models|Choose models to install + autostart, or add your own (interactive)|off|install_models|detect_models|uninstall_models|Models"
+  "models|Choose models to install + autostart, or add your own|off|install_models|detect_models|uninstall_models|Models||configure_models"
   "lm_studio_app|LM Studio AppImage + CLI (requires root)|on|install_lm_studio_app|detect_lm_studio_app|uninstall_lm_studio_app|Applications"
   "serve|serve.env, boot script, and lmstudio-serve.service user service|on|configure_serving|detect_serve|uninstall_serve|Serving"
 )

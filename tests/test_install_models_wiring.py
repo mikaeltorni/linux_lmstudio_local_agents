@@ -25,9 +25,41 @@ def test_models_component_is_default_off():
     """The menu default should not install or download LLM models unattended."""
     components = (ROOT / "installer" / "components.sh").read_text(encoding="utf-8")
     assert (
-        "models|Choose models to install + autostart, or add your own "
-        "(interactive)|off|install_models|detect_models|uninstall_models"
+        "models|Choose models to install + autostart, or add your own"
+        "|off|install_models|detect_models|uninstall_models"
     ) in components
+
+
+def test_models_component_advertises_nested_configurator():
+    """Both master and standalone menus must discover the model detail screen."""
+    proc = subprocess.run(
+        ["bash", str(ROOT / "install.sh"), "--list-configurable-components"],
+        capture_output=True, text=True, check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.splitlines() == ["models"]
+
+
+def test_configure_component_writes_selection_without_downloading(tmp_path):
+    """The nested screen contract should persist choices but perform no download."""
+    selection = json.dumps({"selected_ids": ["ornstein"], "autostart_ids": ["ornstein"]})
+    proc = _run(
+        tmp_path,
+        f"export LMLA_MODEL_SELECTION_JSON={selection!r}",
+        call="configure_models",
+    )
+    assert proc.returncode == 0, proc.stderr
+    catalog = _catalog(tmp_path)
+    assert [p["id"] for p in catalog["profiles"] if p["default_install"]] == ["ornstein"]
+    assert not (tmp_path / ".config/systemd/user/lmstudio-model-download.service").exists()
+    before = json.dumps(catalog, sort_keys=True)
+    repeated = _run(
+        tmp_path,
+        f"export LMLA_MODEL_SELECTION_JSON={selection!r}",
+        call="configure_models",
+    )
+    assert repeated.returncode == 0, repeated.stderr
+    assert json.dumps(_catalog(tmp_path), sort_keys=True) == before
 
 
 def _run(home: Path, install_models_env: str, *, call: str) -> subprocess.CompletedProcess:
@@ -205,6 +237,30 @@ def test_custom_model_environment_adds_main_profile(tmp_path):
     assert custom["download_url"] == "https://example.com/my-agent.gguf"
     assert custom["switch_env_var"] == "USE_MY_AGENT"
     assert custom["default_main"] is True
+
+
+def test_hugging_face_source_environment_uses_lm_studio_download_metadata(tmp_path):
+    """One source variable must persist an lms-get spec, not a fake GGUF path."""
+    proc = _run(
+        tmp_path,
+        "\n".join([
+            "export LMSTUDIO_ADD_CUSTOM_MODEL=1",
+            'export LMSTUDIO_CUSTOM_MODEL_SOURCE="owner/model-GGUF@Q4_K_M"',
+            'export LMSTUDIO_CUSTOM_MODEL_ROLE="main"',
+        ]),
+        call="install_models",
+    )
+    assert proc.returncode == 0, proc.stderr
+    custom = next(p for p in _catalog(tmp_path)["profiles"] if p["id"] == "model-gguf")
+    assert custom["download_source"] == "owner/model-GGUF@Q4_K_M"
+    assert custom["download_url"] == ""
+
+
+def test_download_scripts_route_catalog_sources_through_lms_get():
+    library = (ROOT / "lib" / "lm_studio.sh").read_text(encoding="utf-8")
+    background = (ROOT / "scripts" / "lmstudio_download_models.sh").read_text(encoding="utf-8")
+    assert 'lms get --gguf --yes "$download_source"' in library
+    assert 'lms get --gguf --yes "$download_source"' in background
 
 
 def test_default_path_installs_full_catalog(tmp_path):

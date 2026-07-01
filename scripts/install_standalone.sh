@@ -74,7 +74,7 @@ main() {
 # Listing/help must print only their own output (the master parses it).
 case "${1:-}" in
   --list-startup-components) lmla_list_startup_components; exit $? ;;
-  --list-components|--detect|--help|-h|--uninstall|--uninstall=*) component_main "$@"; exit $? ;;
+  --list-components|--list-configurable-components|--configure-component|--configure-component=*|--detect|--help|-h|--uninstall|--uninstall=*) component_main "$@"; exit $? ;;
 esac
 
 main "$@"

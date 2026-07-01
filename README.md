@@ -1,5 +1,18 @@
 # Linux LM Studio Local Agents
 
+Run `bash install.sh`, highlight `models`, and press `→` to open the same nested
+screen used by the aggregate `installation_scripts` installer. Press `A` repeatedly to
+add Hugging Face repository URLs or exact `owner/model@quant` catalog specs,
+`S<number>` to toggle startup, `E<number>` to customize the model's switch
+environment variable, and `G<number>` to set an exclusivity group (`0` means
+ungrouped). A grouped model selected by its environment variable replaces other
+startup models in that group; an ungrouped selection is additive and LM Studio
+reports a load error if available VRAM is insufficient.
+
+Full Hugging Face repository URLs are passed to LM Studio's downloader. Direct
+`.gguf` file URLs retain resumable curl/checksum handling. Catalog specs use the
+documented `owner/model@quant` form.
+
 > Part of [installation_scripts](https://github.com/mikaeltorni/installation_scripts) — the master installer that orchestrates a productivity-focused Ubuntu 24.04 desktop setup (workspaces, hotkeys, window tiling, programming tools, and more). Tested on Ubuntu 24.04.4 LTS.
 
 Standalone installer and runtime for **LM Studio local-agent serving**: it installs

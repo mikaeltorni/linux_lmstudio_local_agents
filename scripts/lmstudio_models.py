@@ -269,6 +269,24 @@ def boot_load_specs(registry: dict, plan: ModelPlan, env: dict[str, str] | None 
     """
     if not plan.install_ids:
         return []
+    environ = os.environ if env is None else env
+    installed = [p for p in profiles(registry) if p["id"] in plan.install_ids]
+    explicit_startup = any("default_startup" in p for p in installed)
+    active_profiles = [
+        p for p in installed
+        if (p.get("default_startup") if explicit_startup else
+            (p.get("default_keep_on") or p.get("default_main")))
+    ]
+    for selected in installed:
+        var = plan.switch_env_vars.get(selected["id"])
+        if not var or not is_truthy(environ.get(var)):
+            continue
+        group = int(selected.get("group") or 0)
+        if group:
+            active_profiles = [p for p in active_profiles if int(p.get("group") or 0) != group]
+        if selected not in active_profiles:
+            active_profiles.append(selected)
+
     order: list[dict] = []
     seen: set[str] = set()
 
@@ -285,9 +303,8 @@ def boot_load_specs(registry: dict, plan: ModelPlan, env: dict[str, str] | None 
             "identifier": profile.get("identifier") or profile["model_key"],
         })
 
-    for pid in plan.keep_on_ids:
-        add(find_profile(registry, pid))
-    add(resolve_active_main(registry, plan, env))
+    for profile in active_profiles:
+        add(profile)
     return order
 
 
@@ -321,15 +338,15 @@ def installable_ids(registry: dict, selected: list[str] | None = None) -> list[s
 
 
 #: Fields the downloader needs per model, in order.
-DOWNLOAD_FIELDS = ("id", "download_url", "model_path", "sha256")
+DOWNLOAD_FIELDS = ("id", "download_url", "download_source", "model_path", "sha256")
 
 
 def download_specs(registry: dict, selected: list[str] | None = None) -> list[dict]:
-    """Return download specs for installable models that have a download URL."""
+    """Return direct-URL or LM Studio catalog download specs."""
     specs = []
     for pid in installable_ids(registry, selected):
         profile = find_profile(registry, pid)
-        if profile.get("download_url"):
+        if profile.get("download_url") or profile.get("download_source"):
             specs.append({field: profile.get(field, "") for field in DOWNLOAD_FIELDS})
     return specs
 
@@ -359,6 +376,44 @@ def switch_env_var_for(model_id: str) -> str:
     """
     suffix = re.sub(r"[^A-Z0-9]+", "_", str(model_id).upper()).strip("_")
     return f"LMSTUDIO_USE_{suffix}"
+
+
+def custom_profile_from_source(source: str) -> dict:
+    """Build a custom profile from one Hugging Face URL or ``owner/model@quant``.
+
+    A direct ``.gguf`` URL remains a resumable curl download. Hugging Face
+    repository URLs require an explicit ``@quant`` suffix and are converted to
+    the exact catalog form documented by ``lms get``.
+    """
+    raw = str(source or "").strip()
+    if not raw:
+        raise ValueError("enter a Hugging Face URL or owner/model@quant")
+    parsed = urlparse(raw)
+    if parsed.scheme in {"http", "https"}:
+        if parsed.path.lower().endswith(".gguf"):
+            name = parsed.path.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+            return normalize_custom_profile({"name": name, "download_url": raw})
+        if parsed.netloc.lower() not in {"huggingface.co", "www.huggingface.co"}:
+            raise ValueError("repository URLs must be from huggingface.co")
+        parts = [part for part in parsed.path.split("/") if part]
+        if len(parts) < 2:
+            raise ValueError("Hugging Face URL must contain owner/model")
+        owner, model_quant = parts[0], parts[1]
+        if "@" in model_quant:
+            model, quant = model_quant.rsplit("@", 1)
+            catalog_source = f"{owner}/{model}@{quant}"
+        else:
+            model = model_quant
+            catalog_source = raw
+    else:
+        catalog_source = raw
+        if not re.fullmatch(r"[^/\s]+/[^@/\s]+@[^@/\s]+", catalog_source):
+            raise ValueError("use owner/model@quant (for example acme/model-GGUF@Q4_K_M)")
+        model = catalog_source.split("/", 1)[1].rsplit("@", 1)[0]
+    model_key = f"{owner}/{model}" if parsed.scheme in {"http", "https"} and "@" not in model_quant else catalog_source
+    profile = normalize_custom_profile({"name": model, "model_key": model_key})
+    profile["download_source"] = catalog_source
+    return profile
 
 
 #: Per-model serving defaults applied to a user-added custom model.
@@ -433,6 +488,8 @@ def normalize_custom_profile(spec: dict) -> dict:
         "default_install": True,
         "default_keep_on": False,
         "default_main": False,
+        "default_startup": False,
+        "group": int(spec.get("group") or 0),
         "custom": True,
     })
     # Allow explicit serving-flag overrides from the spec.
@@ -461,7 +518,7 @@ def custom_install_selection(registry: dict, spec: dict, *, role: str) -> dict:
     """
     if role not in {"main", "keep-on"}:
         raise ValueError(f"unsupported custom model role: {role}")
-    custom = normalize_custom_profile(spec)
+    custom = dict(spec) if spec.get("custom") else normalize_custom_profile(spec)
     selected = [
         profile["id"] for profile in profiles(registry)
         if profile.get("default_install") and profile["id"] != custom["id"]
@@ -574,6 +631,7 @@ def apply_install_selection(
         profile["default_install"] = pid in selected_set
         profile["default_keep_on"] = pid in keep_on
         profile["default_main"] = pid == resolved_main
+        profile["default_startup"] = pid in autostart_set
     return new_registry
 
 
@@ -587,7 +645,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="LM Studio local-agent model resolution.")
     parser.add_argument(
         "command",
-        choices=["active-main", "keep-on", "boot-load", "download-list", "default-plan", "apply-selection", "custom-selection"],
+        choices=["active-main", "keep-on", "boot-load", "download-list", "default-plan", "apply-selection", "custom-selection", "profile-from-source"],
     )
     parser.add_argument("--catalog", type=Path, required=True)
     parser.add_argument(
@@ -598,6 +656,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--name", default="", help="custom-selection: display name/id.")
     parser.add_argument("--model-key", default="", help="custom-selection: lms model key.")
     parser.add_argument("--download-url", default="", help="custom-selection: GGUF URL.")
+    parser.add_argument("--source", default="", help="Hugging Face URL or owner/model@quant.")
     parser.add_argument("--sha256", default="", help="custom-selection: optional checksum.")
     parser.add_argument(
         "--switch-env-var",
@@ -611,12 +670,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     registry = load_registry(args.catalog)
+    if args.command == "profile-from-source":
+        print(json.dumps(custom_profile_from_source(args.source), indent=2))
+        return 0
     if args.command == "custom-selection":
-        spec = {
-            "name": args.name,
-            "model_key": args.model_key,
-            "download_url": args.download_url,
-            "sha256": args.sha256,
+        spec = custom_profile_from_source(args.source) if args.source else {
+            "name": args.name, "model_key": args.model_key,
+            "download_url": args.download_url, "sha256": args.sha256,
         }
         if args.switch_env_var is not None:
             spec["switch_env_var"] = args.switch_env_var

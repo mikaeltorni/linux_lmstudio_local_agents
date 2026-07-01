@@ -31,7 +31,15 @@ if [ ! -x "$MODELS_CLI" ]; then
 fi
 
 pending=0
-while IFS=$'\t' read -r model_id download_url model_path sha256; do
+while IFS=$'\t' read -r model_id download_url download_source model_path sha256; do
+  if [ -n "${download_source:-}" ]; then
+    log "downloading model through LM Studio: $model_id ($download_source)"
+    if ! PATH="$HOME/.lmstudio/bin:$HOME/.local/bin:$PATH" lms get --gguf --yes "$download_source"; then
+      log "LM Studio download incomplete for $model_id; will retry on the next run"
+      pending=1
+    fi
+    continue
+  fi
   [ -n "${download_url:-}" ] || continue
   model_file="$MODELS_DIR/$model_path"
   if [ -n "${sha256:-}" ]; then

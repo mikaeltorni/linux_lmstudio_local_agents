@@ -290,6 +290,47 @@ def test_normalize_custom_profile_derives_fields():
     assert profile["sha256"] == ""
 
 
+def test_normalize_custom_source_accepts_hugging_face_url_and_lms_spec():
+    url = lm.custom_profile_from_source(
+        "https://huggingface.co/acme/Tiny-Llama-GGUF@Q4_K_M"
+    )
+    assert url["id"] == "tiny-llama-gguf"
+    assert url["model_key"] == "acme/Tiny-Llama-GGUF@Q4_K_M"
+    assert url["download_source"] == "acme/Tiny-Llama-GGUF@Q4_K_M"
+    spec = lm.custom_profile_from_source("acme/Other-GGUF@q5_k_m")
+    assert spec["id"] == "other-gguf"
+    assert spec["download_source"] == "acme/Other-GGUF@q5_k_m"
+
+
+def test_hugging_face_repository_url_can_use_lm_studio_default_quantization():
+    profile = lm.custom_profile_from_source("https://huggingface.co/acme/Tiny-Llama-GGUF")
+    assert profile["download_source"] == "https://huggingface.co/acme/Tiny-Llama-GGUF"
+    assert profile["model_key"] == "acme/Tiny-Llama-GGUF"
+
+
+def test_exact_hugging_face_gguf_file_keeps_resumable_direct_download():
+    profile = lm.custom_profile_from_source(
+        "https://huggingface.co/acme/model-GGUF/resolve/main/model-Q4_K_M.gguf"
+    )
+    assert profile["download_url"].endswith("model-Q4_K_M.gguf")
+    assert "download_source" not in profile
+
+
+def test_grouped_env_selection_replaces_startup_peer_but_ungrouped_is_additive(registry):
+    registry["profiles"][0]["group"] = 1
+    registry["profiles"][1]["group"] = 1
+    registry["profiles"][0]["default_startup"] = True
+    registry["profiles"][1]["default_startup"] = False
+    plan = lm.default_plan(registry)
+    grouped = lm.boot_load_specs(registry, plan, env={"LMSTUDIO_USE_ORNSTEIN": "1"})
+    assert [item["model_key"] for item in grouped] == ["ornstein3.6-35b-a3b"]
+    registry["profiles"][1]["group"] = 0
+    additive = lm.boot_load_specs(registry, plan, env={"LMSTUDIO_USE_ORNSTEIN": "1"})
+    assert [item["model_key"] for item in additive] == [
+        "vibethinker-1.5b", "ornstein3.6-35b-a3b"
+    ]
+
+
 def test_normalize_custom_profile_accepts_explicit_or_empty_switch_variable():
     """Coding models can name a switch variable; keep-on models can omit one."""
     explicit = lm.normalize_custom_profile({
