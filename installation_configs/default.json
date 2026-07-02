@@ -1,5 +1,33 @@
 {
-  "components": {},
+  "components": {
+    "lm_studio_app": {
+      "config_value": "",
+      "favorite": 0,
+      "on": 1,
+      "startup": 0,
+      "sticky": 0,
+      "uninstall": 0,
+      "workspace": 0
+    },
+    "models": {
+      "config_value": "",
+      "favorite": 0,
+      "on": 0,
+      "startup": 0,
+      "sticky": 0,
+      "uninstall": 0,
+      "workspace": 0
+    },
+    "serve": {
+      "config_value": "",
+      "favorite": 0,
+      "on": 1,
+      "startup": 0,
+      "sticky": 0,
+      "uninstall": 0,
+      "workspace": 0
+    }
+  },
   "repo": "linux_lmstudio_local_agents",
   "schema_version": 1,
   "scope": "standalone"
