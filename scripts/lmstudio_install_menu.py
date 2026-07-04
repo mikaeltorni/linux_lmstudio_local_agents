@@ -55,17 +55,16 @@ class SelectionState:
 
         Args:
             profiles: The registry's profile list. Each profile's
-                ``default_install``/``default_keep_on``/``default_main`` seeds the
-                initial install/autostart state so the menu opens on the shipped
-                layout.
+                ``default_install`` seeds the install state and
+                :func:`lmstudio_models.autostarts_by_default` seeds autostart, so
+                the menu opens on the shipped layout (a model with
+                ``default_startup: false`` opens installed but startup-off).
         """
         self._state = repeatable_fields.RepeatableRows()
         self.rows = self._state.items
         for profile in profiles:
             install = bool(profile.get("default_install"))
-            autostart = install and bool(
-                profile.get("default_keep_on") or profile.get("default_main")
-            )
+            autostart = install and lmstudio_models.autostarts_by_default(profile)
             self._state.add({
                 "id": profile["id"],
                 "label": profile.get("description") or profile["id"],

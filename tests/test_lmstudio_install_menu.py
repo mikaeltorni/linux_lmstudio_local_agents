@@ -56,11 +56,16 @@ def _silent_writer(_text):
 
 
 def test_initial_state_matches_shipped_defaults(profiles):
-    """The menu opens on the shipped layout (vibethinker and Ornstein autostart)."""
+    """The menu opens on the shipped layout: both installed, only VibeThinker on startup.
+
+    Ornstein ships installed but ``default_startup: false``, so it opens
+    startup-off — the user can turn autoloading on with the ``s<n>`` command (or
+    ``LMSTUDIO_USE_ORNSTEIN``) without it consuming VRAM by default.
+    """
     state = menu.SelectionState(profiles)
     sel = state.selection()
     assert set(sel["selected_ids"]) == {"vibethinker", "ornstein"}
-    assert set(sel["autostart_ids"]) == {"vibethinker", "ornstein"}
+    assert set(sel["autostart_ids"]) == {"vibethinker"}
     rendered = menu.render(state)
     assert "LMSTUDIO_USE_VIBETHINKER" in rendered
     assert "LMSTUDIO_USE_ORNSTEIN" in rendered

@@ -95,11 +95,17 @@ lmla_install_assets() {
 lmla_selection_from_ids() {
   python3 - "$LMLA_CONFIG_DIR/model-profiles.json" "$1" <<'PY'
 import json, sys
+def autostarts(p):
+    # Explicit default_startup wins so an installed-but-idle model (Ornstein)
+    # is never autostarted; otherwise keep-on/main models autostart.
+    if "default_startup" in p:
+        return bool(p.get("default_startup"))
+    return bool(p.get("default_keep_on") or p.get("default_main"))
 registry = json.load(open(sys.argv[1], encoding="utf-8"))
 wanted = {t for t in sys.argv[2].replace(",", " ").split() if t}
 selected = [p["id"] for p in registry["profiles"] if p["id"] in wanted]
 autostart = [p["id"] for p in registry["profiles"]
-             if p["id"] in wanted and (p.get("default_keep_on") or p.get("default_main"))]
+             if p["id"] in wanted and autostarts(p)]
 print(json.dumps({"selected_ids": selected, "autostart_ids": autostart}))
 PY
 }
@@ -116,6 +122,13 @@ lmla_additive_selection_from_ids() {
 import json, sys
 from pathlib import Path
 
+def autostarts(p):
+    # Explicit default_startup wins so an installed-but-idle model (Ornstein)
+    # is never autostarted; otherwise keep-on/main models autostart.
+    if "default_startup" in p:
+        return bool(p.get("default_startup"))
+    return bool(p.get("default_keep_on") or p.get("default_main"))
+
 base = json.load(open(sys.argv[1], encoding="utf-8"))
 existing_path = Path(sys.argv[2])
 existing = json.load(open(existing_path, encoding="utf-8")) if existing_path.exists() else base
@@ -128,7 +141,7 @@ for profile in existing.get("profiles", []):
     pid = profile["id"]
     if profile.get("default_install") or pid in wanted:
         selected.append(pid)
-    if profile.get("default_keep_on") or profile.get("default_main"):
+    if autostarts(profile):
         autostart.append(pid)
     if profile.get("default_main"):
         main_id = pid
@@ -136,7 +149,7 @@ for profile in base.get("profiles", []):
     pid = profile["id"]
     if pid in wanted and pid not in selected:
         selected.append(pid)
-    if pid in wanted and (profile.get("default_keep_on") or profile.get("default_main")) and pid not in autostart:
+    if pid in wanted and autostarts(profile) and pid not in autostart:
         autostart.append(pid)
 for profile in base.get("profiles", []):
     pid = profile["id"]

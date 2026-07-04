@@ -18,7 +18,8 @@
     "switch_env_var": "Environment variable that, when truthy, makes this the active main model.",
     "default_install": "Selected for installation in the default (non-interactive) install.",
     "default_keep_on": "Kept loaded at all times (not part of the switchable main slot).",
-    "default_main": "The default active main model and the target of LMSTUDIO_MAIN_MODEL."
+    "default_main": "The default active main model and the target of LMSTUDIO_MAIN_MODEL.",
+    "default_startup": "Autoloaded into VRAM at boot. When omitted, falls back to default_keep_on || default_main. Set false to ship a model installed-but-idle (still switchable via its switch_env_var, e.g. LMSTUDIO_USE_ORNSTEIN=1) so it never consumes VRAM until asked for."
   },
   "profiles": [
     {
@@ -40,7 +41,8 @@
       "switch_env_var": "LMSTUDIO_USE_VIBETHINKER",
       "default_install": true,
       "default_keep_on": true,
-      "default_main": false
+      "default_main": false,
+      "default_startup": true
     },
     {
       "id": "ornstein",
@@ -61,7 +63,8 @@
       "switch_env_var": "LMSTUDIO_USE_ORNSTEIN",
       "default_install": true,
       "default_keep_on": false,
-      "default_main": true
+      "default_main": true,
+      "default_startup": false
     }
   ]
 }

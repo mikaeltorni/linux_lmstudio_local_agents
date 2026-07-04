@@ -197,14 +197,19 @@ def test_cli_default_plan_json(capsys):
 
 
 def test_boot_load_specs_default_order(registry):
-    """Boot load order is keep-on models first, then the active main."""
+    """By default only the startup models load; Ornstein ships installed-but-idle.
+
+    Ornstein sets ``default_startup: false`` so it never occupies VRAM at boot
+    (it remains installed and switchable via ``LMSTUDIO_USE_ORNSTEIN``); the
+    keep-on VibeThinker is the only default boot-load.
+    """
     plan = lm.default_plan(registry)
     specs = lm.boot_load_specs(registry, plan, env={})
     keys = [spec["model_key"] for spec in specs]
-    assert keys == ["vibethinker-1.5b", "ornstein3.6-35b-a3b"]
+    assert keys == ["vibethinker-1.5b"]
     # Each spec carries the lms load flags.
     assert set(lm.BOOT_LOAD_FIELDS).issubset(specs[0].keys())
-    assert specs[0]["gpu"] == "off" and specs[1]["gpu"] == "max"
+    assert specs[0]["gpu"] == "off"
 
 
 def test_boot_load_specs_follows_switch_var(registry):

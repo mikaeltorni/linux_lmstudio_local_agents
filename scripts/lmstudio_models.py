@@ -185,6 +185,20 @@ def build_plan(
     )
 
 
+def autostarts_by_default(profile: dict) -> bool:
+    """Whether a profile is boot-loaded into VRAM by default.
+
+    An explicit ``default_startup`` flag wins so a model can ship
+    installed-but-idle: e.g. Ornstein stays downloaded and switchable via its
+    ``switch_env_var`` (``LMSTUDIO_USE_ORNSTEIN=1``) yet never occupies VRAM at
+    boot. Profiles without the key keep the historical behaviour — keep-on and
+    main models autostart.
+    """
+    if "default_startup" in profile:
+        return bool(profile.get("default_startup"))
+    return bool(profile.get("default_keep_on") or profile.get("default_main"))
+
+
 def default_plan(registry: dict) -> ModelPlan:
     """Build the default (non-interactive) plan from the registry's flags.
 
@@ -271,12 +285,7 @@ def boot_load_specs(registry: dict, plan: ModelPlan, env: dict[str, str] | None 
         return []
     environ = os.environ if env is None else env
     installed = [p for p in profiles(registry) if p["id"] in plan.install_ids]
-    explicit_startup = any("default_startup" in p for p in installed)
-    active_profiles = [
-        p for p in installed
-        if (p.get("default_startup") if explicit_startup else
-            (p.get("default_keep_on") or p.get("default_main")))
-    ]
+    active_profiles = [p for p in installed if autostarts_by_default(p)]
     for selected in installed:
         var = plan.switch_env_vars.get(selected["id"])
         if not var or not is_truthy(environ.get(var)):
