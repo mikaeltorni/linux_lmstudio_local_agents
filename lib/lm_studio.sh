@@ -446,6 +446,30 @@ EOF
   run_as_target systemctl --user start "$service_name" || log "warn" "starting $service_name failed, continuing."
 }
 
+# install_lmstudio_core — ISC_CORE entry: install everything this repository
+# needs to be useful at all, regardless of the component selection.
+#
+# The LM Studio app/CLI, the shared runtime assets (boot script, lmstudio-model
+# switch commands, logging helper, model catalog) and the lmstudio-serve user
+# service are not optional features: without them no component, and no
+# downstream agent consumer, can reach a local model. Running them here instead
+# of from ISC_COMPONENTS is what makes `bash install.sh --select ''` (or
+# deselecting every row) still produce a working install.
+#
+# Idempotent, as ISC_CORE requires — every install, re-run, and reconfigure
+# invokes it: install_lm_studio_app early-returns when the requested version is
+# already present and degrades to note_sudo_required without root, while
+# configure_serving rewrites serve.env/the unit in place and preserves an
+# existing model catalog.
+#
+# Returns: 0 on success. A non-zero return is fatal — component_main returns 2
+# and installs no components rather than layering them on a broken core.
+install_lmstudio_core() {
+  msg "Installing LM Studio core (app + CLI, shared assets, serve user service)"
+  install_lm_studio_app
+  configure_serving
+}
+
 ###############################################################################
 # Detection and uninstall (component lifecycle)
 ###############################################################################
@@ -461,6 +485,8 @@ detect_models() {
 }
 
 # detect_serve - true when the lmstudio-serve user service unit is installed.
+# Retained as a manual/diagnostic helper: serving moved into ISC_CORE, so it is
+# no longer referenced from the component manifest.
 detect_serve() {
   local service_name="${LMSTUDIO_USER_SERVICE_NAME:-lmstudio-serve.service}"
   [ -f "$TARGET_HOME/.config/systemd/user/$service_name" ]
@@ -544,6 +570,9 @@ uninstall_models() {
 }
 
 # uninstall_serve - stop/disable and remove the serve user service and its env.
+# Retained as the manual reversal path for the core serving setup: serving moved
+# into ISC_CORE, so the component menu no longer exposes a [u] action for it.
+# Re-running the installer reinstalls the unit.
 uninstall_serve() {
   local service_name="${LMSTUDIO_USER_SERVICE_NAME:-lmstudio-serve.service}"
   msg "Removing LM Studio serve user service"
