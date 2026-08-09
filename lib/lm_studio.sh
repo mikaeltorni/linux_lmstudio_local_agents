@@ -477,25 +477,59 @@ uninstall_lm_studio_app() {
   rm -rf /opt/lm-studio
 }
 
+# lmla_shared_assets_in_use - report whether a component other than `models`
+# still depends on the assets written by lmla_install_assets (defaults.sh, the
+# boot script, the logging helper, and the lmstudio-model[s] commands).
+#
+# The boot script is the serve unit's ExecStart and it invokes lmstudio-models,
+# so removing those files while `serve` or `lm_studio_app` is installed silently
+# breaks serving. Falls back to filesystem evidence when the component runtime's
+# private detector is not sourced (standalone/library use).
+#
+# Returns:
+#   0 when another component still needs the shared assets, 1 otherwise.
+lmla_shared_assets_in_use() {
+  local id
+  if declare -F _isc_is_installed >/dev/null 2>&1; then
+    for id in serve lm_studio_app; do
+      if _isc_is_installed "$id"; then
+        return 0
+      fi
+    done
+    return 1
+  fi
+  local service_name="${LMSTUDIO_USER_SERVICE_NAME:-lmstudio-serve.service}"
+  [ -f "$TARGET_HOME/.config/systemd/user/$service_name" ]
+}
+
 # uninstall_models - remove the installed model registry, defaults, and the
 # lmstudio-* helper commands. Downloaded model weights under ~/.lmstudio are left
 # in place (they can be large and are managed by LM Studio itself).
 # Enhanced uninstall that clears main model tracking so lms ls shows empty results
+#
+# Shared assets are kept whenever another installed component still needs them,
+# so deselecting the optional `models` feature never disables serving.
 uninstall_models() {
   local config_dir bin_dir env_file catalog_file
-  
-  # Get paths from environment or defaults  
+
+  # Get paths from environment or defaults
   config_dir="${LMLA_CONFIG_DIR:-$TARGET_HOME/.config/lmstudio-local-agents}"
-  bin_dir="$HOME/.local/bin"
+  bin_dir="$(lmla_bin_dir)"
   catalog_file="$config_dir/configs/lmstudio/model-profiles.json"
-  
+
   msg "Removing LM Studio model registry and helper commands (weights left in ~/.lmstudio)"
-  
-  # Remove the helper scripts that enable lms ls functionality
-  run_as_target rm -f \
-    "$bin_dir/lmstudio-models" "$bin_dir/lmstudio-model" \
-    "$bin_dir/lmstudio-boot.sh" "$bin_dir/lmla_logging_utils.py"
-    
+
+  # Remove the helper scripts that enable lms ls functionality, but only when no
+  # other installed component still runs them (serve's ExecStart is the boot
+  # script, which in turn calls lmstudio-models).
+  if lmla_shared_assets_in_use; then
+    msg "Keeping shared LM Studio helpers: another installed component still uses them"
+  else
+    run_as_target rm -f \
+      "$bin_dir/lmstudio-models" "$bin_dir/lmstudio-model" \
+      "$bin_dir/lmstudio-boot.sh" "$bin_dir/lmla_logging_utils.py"
+  fi
+
   # Clear model registry so queries return empty
   if [ -d "$config_dir/configs/lmstudio" ]; then
     run_as_target rm -rf "$config_dir/configs/lmstudio/model-profiles.json"

@@ -320,3 +320,36 @@ def test_sync_override_downloads_inline(tmp_path):
     assert proc.returncode == 0, proc.stderr
     unit = tmp_path / ".config/systemd/user/lmstudio-model-download.service"
     assert not unit.exists(), "sync path must not install the background service"
+
+
+def test_uninstall_models_keeps_assets_serve_still_needs(tmp_path):
+    """Deselecting the optional models feature must not disable the serve unit.
+
+    serve's ExecStart is ~/.local/bin/lmstudio-boot.sh, which invokes
+    lmstudio-models; both are shared assets, so uninstall_models has to leave
+    them alone while the serve component is still installed.
+    """
+    installed = _run(tmp_path, "", call="configure_serving\nuninstall_models")
+    assert installed.returncode == 0, installed.stderr
+    bin_dir = tmp_path / ".local/bin"
+    assert (bin_dir / "lmstudio-boot.sh").exists()
+    assert (bin_dir / "lmstudio-models").exists()
+    unit = tmp_path / ".config/systemd/user/lmstudio-serve.service"
+    exec_start = [
+        line for line in unit.read_text(encoding="utf-8").splitlines()
+        if line.startswith("ExecStart=")
+    ][0]
+    assert Path(exec_start.split("=", 1)[1]).exists()
+
+
+def test_uninstall_models_removes_assets_when_nothing_else_needs_them(tmp_path):
+    """With no serve unit present the helpers are still fully cleaned up."""
+    proc = _run(
+        tmp_path,
+        'export LMSTUDIO_INSTALL_MODELS="ornstein"',
+        call="install_models\nuninstall_models",
+    )
+    assert proc.returncode == 0, proc.stderr
+    bin_dir = tmp_path / ".local/bin"
+    assert not (bin_dir / "lmstudio-boot.sh").exists()
+    assert not (bin_dir / "lmstudio-models").exists()
