@@ -11,12 +11,26 @@
 ISC_REPO_NAME="linux_lmstudio_local_agents"
 ISC_REPO_LABEL="LM Studio local agents"
 
+# The LM Studio app/CLI, the shared runtime assets, and the lmstudio-serve user
+# service are this repository's core: nothing here works without them, so they
+# must install even for `--select ''`. They therefore run through ISC_CORE
+# rather than as ISC_COMPONENTS rows, which are always deselectable ("on" means
+# pre-selected, not mandatory). See the framework README, "Core vs. optional
+# components". Do NOT express the core as ISC_PREFLIGHT: the preflight fires
+# only in front of the first component that actually runs, so a blank selection
+# would skip it.
+ISC_CORE="install_lmstudio_core"
+
 ISC_POSTFLIGHT="report_sudo_required"
 
+# Only genuinely optional choices belong here. `lm_studio_app` stays listed
+# because the row carries the master installer's [S] GUI-autostart toggle (see
+# lmla_list_startup_components, which is only honored for ids that are also
+# component rows) and its [u] uninstall action — the app itself is installed by
+# the core above, so deselecting the row cannot leave the repository broken.
 ISC_COMPONENTS=(
   "models|Choose models to install + autostart, or add your own|off|install_models|detect_models|uninstall_models|Models||configure_models"
-  "lm_studio_app|LM Studio AppImage + CLI (requires root)|on|install_lm_studio_app|detect_lm_studio_app|uninstall_lm_studio_app|Applications"
-  "serve|serve.env, boot script, and lmstudio-serve.service user service|on|configure_serving|detect_serve|uninstall_serve|Serving"
+  "lm_studio_app|LM Studio GUI autostart + app refresh (app installed by core)|on|install_lm_studio_app|detect_lm_studio_app|uninstall_lm_studio_app|Applications"
 )
 
 # lmla_list_startup_components - Expose the LM Studio GUI to the master [S]
