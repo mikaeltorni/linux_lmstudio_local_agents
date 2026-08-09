@@ -353,3 +353,23 @@ def test_uninstall_models_removes_assets_when_nothing_else_needs_them(tmp_path):
     bin_dir = tmp_path / ".local/bin"
     assert not (bin_dir / "lmstudio-boot.sh").exists()
     assert not (bin_dir / "lmstudio-models").exists()
+
+
+def test_uninstall_models_keeps_assets_for_core_serving_without_receipts(tmp_path):
+    """Core serving has no component receipt, so the unit file must protect it.
+
+    Serving moved into ISC_CORE, which never writes an ISC receipt. If the guard
+    trusted receipts alone, uninstalling the lm_studio_app row (clearing the only
+    remaining receipt) would delete the boot script that core serving executes.
+    """
+    proc = _run(
+        tmp_path,
+        "_isc_is_installed() { return 1; }",
+        call="configure_serving\nuninstall_models",
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    bin_dir = tmp_path / ".local/bin"
+    assert (bin_dir / "lmstudio-boot.sh").exists(), "core serve ExecStart deleted"
+    assert (bin_dir / "lmstudio-models").exists()
+    assert (bin_dir / "lmla_logging_utils.py").exists()

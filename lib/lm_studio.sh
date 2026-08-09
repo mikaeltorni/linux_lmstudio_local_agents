@@ -515,6 +515,15 @@ uninstall_lm_studio_app() {
 # Returns:
 #   0 when another component still needs the shared assets, 1 otherwise.
 lmla_shared_assets_in_use() {
+  # Serving is part of ISC_CORE, so it never carries a component receipt: the
+  # installed unit file is the authoritative signal that the boot script (and
+  # the lmstudio-models helper it calls) is still in use. Check it first and
+  # unconditionally, otherwise uninstalling the lm_studio_app row would strip
+  # the assets that core serving depends on.
+  local service_name="${LMSTUDIO_USER_SERVICE_NAME:-lmstudio-serve.service}"
+  [ -f "$TARGET_HOME/.config/systemd/user/$service_name" ] && return 0
+  # Receipts still cover the lm_studio_app row, plus the legacy `serve`
+  # component receipt left behind by installs that predate the core move.
   local id
   if declare -F _isc_is_installed >/dev/null 2>&1; then
     for id in serve lm_studio_app; do
@@ -522,10 +531,8 @@ lmla_shared_assets_in_use() {
         return 0
       fi
     done
-    return 1
   fi
-  local service_name="${LMSTUDIO_USER_SERVICE_NAME:-lmstudio-serve.service}"
-  [ -f "$TARGET_HOME/.config/systemd/user/$service_name" ]
+  return 1
 }
 
 # uninstall_models - remove the installed model registry, defaults, and the
