@@ -22,13 +22,15 @@ lmla_target_config_dir() { printf '%s\n' "$TARGET_HOME/.config/lmstudio-local-ag
 lmla_target_catalog() { printf '%s\n' "$(lmla_target_config_dir)/model-profiles.json"; }
 lmla_bin_dir() { printf '%s\n' "$TARGET_HOME/.local/bin"; }
 
-# install_lm_studio_app — install the LM Studio application and CLI (root only).
+# install_lm_studio_app — install the LM Studio application (root only).
 install_lm_studio_app() {
-  local version="${LM_STUDIO_VERSION:-0.4.16-2}"
-  local installed_version_file="/opt/lm-studio/.lmstudio-local-agents-version"
-  if need_cmd lm-studio \
-    && [ -f "$installed_version_file" ] \
-    && [ "$(cat "$installed_version_file")" = "$version" ]; then
+  local version="${LM_STUDIO_VERSION:-0.4.21-2}"
+  local install_dir="${LMSTUDIO_APP_INSTALL_DIR:-/opt/lm-studio}"
+  local wrapper_path="${LMSTUDIO_APP_WRAPPER_PATH:-/usr/local/bin/lm-studio}"
+  local installed_version_file="$install_dir/.lmstudio-local-agents-version"
+  if [ -f "$installed_version_file" ] \
+    && [ "$(cat "$installed_version_file")" = "$version" ] \
+    && { test -x "$install_dir/lm-studio" || test -x "$install_dir/AppRun"; }; then
     return 0
   fi
   if [ "$(id -u)" -ne 0 ]; then
@@ -38,30 +40,103 @@ install_lm_studio_app() {
 
   msg "Installing LM Studio (${version})"
   apt_install curl unzip wget xdg-utils
-  local tmpdir="/tmp/lm-studio-install"
-  rm -rf "$tmpdir"; mkdir -p "$tmpdir"
+  local tmpdir
+  tmpdir="$(mktemp -d)"
   local url_arch="x64"
   [ "$(dpkg --print-architecture)" = "arm64" ] && url_arch="aarch64"
   local url="https://installers.lmstudio.ai/linux/${url_arch}/${version}/LM-Studio-${version}-${url_arch}.AppImage"
   msg "Downloading LM Studio from $url..."
   curl -fL "$url" -o "$tmpdir/LMStudio.AppImage"
   chmod +x "$tmpdir/LMStudio.AppImage"
-  "$tmpdir/LMStudio.AppImage" --appimage-extract >/dev/null 2>&1 || true
-  local install_dir="/opt/lm-studio"
-  rm -rf "$install_dir"; mkdir -p "$install_dir"
-  if [ -d "$tmpdir/squashfs-root" ]; then
-    cp -a "$tmpdir/squashfs-root/." "$install_dir/"
-  elif [ -d "$tmpdir/LMStudio.AppImage.extracted" ]; then
-    cp -a "$tmpdir/LMStudio.AppImage.extracted/." "$install_dir/"
+  if ! (cd "$tmpdir" && ./LMStudio.AppImage --appimage-extract >/dev/null 2>&1); then
+    msg "LM Studio AppImage extraction failed"
+    rm -rf "$tmpdir"
+    return 1
   fi
-  cat > /usr/local/bin/lm-studio <<'WRAPPER'
+
+  local extracted="$tmpdir/squashfs-root"
+  if [ ! -d "$extracted" ]; then
+    msg "LM Studio AppImage extraction produced no squashfs-root"
+    rm -rf "$tmpdir"
+    return 1
+  fi
+
+  local staging="${install_dir}.new.$$"
+  local previous="${install_dir}.previous.$$"
+  rm -rf "$staging" "$previous"
+  mkdir -p "$staging" "$(dirname "$wrapper_path")"
+  cp -a "$extracted/." "$staging/"
+  if ! test -x "$staging/lm-studio" && ! test -x "$staging/AppRun"; then
+    msg "LM Studio extraction is missing an executable entry point"
+    rm -rf "$tmpdir" "$staging"
+    return 1
+  fi
+  printf '%s\n' "$version" > "$staging/.lmstudio-local-agents-version"
+
+  if [ -e "$install_dir" ]; then
+    mv "$install_dir" "$previous"
+  fi
+  if ! mv "$staging" "$install_dir"; then
+    [ ! -e "$previous" ] || mv "$previous" "$install_dir"
+    rm -rf "$tmpdir" "$staging"
+    return 1
+  fi
+  rm -rf "$previous"
+
+  local app_entry="$install_dir/lm-studio"
+  [ -x "$app_entry" ] || app_entry="$install_dir/AppRun"
+  cat > "$wrapper_path" <<EOF
 #!/bin/bash
-exec /opt/lm-studio/lm-studio "$@"
-WRAPPER
-  chmod +x /usr/local/bin/lm-studio
-  printf '%s\n' "$version" > "$installed_version_file"
+exec "$app_entry" "\$@"
+EOF
+  chmod +x "$wrapper_path"
   rm -rf "$tmpdir"
   msg "LM Studio installed to $install_dir"
+}
+
+# lmla_lms_works — true only when the target user's headless CLI can execute.
+lmla_lms_works() {
+  local lms_cli="$TARGET_HOME/.lmstudio/bin/lms"
+  [ -x "$lms_cli" ] || return 1
+  run_as_target env HOME="$TARGET_HOME" timeout 15 "$lms_cli" --help >/dev/null 2>&1
+}
+
+# install_lmstudio_daemon — install or repair the official llmster + lms bundle.
+# The official installer verifies the downloaded daemon archive's SHA-512 and
+# is downloaded to a file first so a network error can never be piped into a
+# shell. PATH edits are disabled because this repository owns its own wrapper.
+install_lmstudio_daemon() {
+  if lmla_lms_works; then
+    return 0
+  fi
+
+  msg "Installing LM Studio headless daemon and lms CLI"
+  need_cmd curl
+  local installer_url="${LMSTUDIO_DAEMON_INSTALLER_URL:-https://lmstudio.ai/install.sh}"
+  local tmpdir installer
+  tmpdir="$(mktemp -d)"
+  installer="$tmpdir/install-llmster.sh"
+  if ! curl -fsSL "$installer_url" -o "$installer"; then
+    msg "Could not download the official LM Studio daemon installer"
+    rm -rf "$tmpdir"
+    return 1
+  fi
+  chmod 0755 "$installer"
+  if ! run_as_target env \
+    HOME="$TARGET_HOME" \
+    LMS_NO_MODIFY_PATH=1 \
+    LMS_PRINT_QUIET=1 \
+    sh "$installer" --no-modify-path --quiet; then
+    msg "LM Studio headless daemon installation failed"
+    rm -rf "$tmpdir"
+    return 1
+  fi
+  rm -rf "$tmpdir"
+
+  if ! lmla_lms_works; then
+    msg "LM Studio installer completed without a working lms CLI"
+    return 1
+  fi
 }
 
 # lmla_install_assets — copy the defaults, boot script, and the Python tools to
@@ -449,24 +524,26 @@ EOF
 # install_lmstudio_core — ISC_CORE entry: install everything this repository
 # needs to be useful at all, regardless of the component selection.
 #
-# The LM Studio app/CLI, the shared runtime assets (boot script, lmstudio-model
-# switch commands, logging helper, model catalog) and the lmstudio-serve user
-# service are not optional features: without them no component, and no
-# downstream agent consumer, can reach a local model. Running them here instead
-# of from ISC_COMPONENTS is what makes `bash install.sh --select ''` (or
-# deselecting every row) still produce a working install.
+# The LM Studio app, headless daemon/CLI, shared runtime assets (boot script,
+# lmstudio-model switch commands, logging helper, model catalog) and the
+# lmstudio-serve user service are not optional features: without them no
+# component, and no downstream agent consumer, can reach a local model. Running
+# them here instead of from ISC_COMPONENTS is what makes
+# `bash install.sh --select ''` (or deselecting every row) still produce a
+# working install.
 #
 # Idempotent, as ISC_CORE requires — every install, re-run, and reconfigure
-# invokes it: install_lm_studio_app early-returns when the requested version is
-# already present and degrades to note_sudo_required without root, while
-# configure_serving rewrites serve.env/the unit in place and preserves an
-# existing model catalog.
+# invokes it: the app early-returns when the requested version is already
+# present, the daemon installer repairs a missing or crashing lms executable,
+# and configure_serving rewrites serve.env/the unit in place while preserving
+# an existing model catalog.
 #
 # Returns: 0 on success. A non-zero return is fatal — component_main returns 2
 # and installs no components rather than layering them on a broken core.
 install_lmstudio_core() {
   msg "Installing LM Studio core (app + CLI, shared assets, serve user service)"
   install_lm_studio_app
+  install_lmstudio_daemon
   configure_serving
 }
 
