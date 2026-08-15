@@ -16,8 +16,8 @@ documented `owner/model@quant` form.
 > Part of [installation_scripts](https://github.com/mikaeltorni/installation_scripts) — the master installer that orchestrates a productivity-focused Ubuntu 24.04 desktop setup (workspaces, hotkeys, window tiling, programming tools, and more). Tested on Ubuntu 24.04.4 LTS.
 
 Standalone installer and runtime for **LM Studio local-agent serving**: it installs
-the LM Studio AppImage + CLI, runs the headless OpenAI-compatible server as a
-systemd user service, and manages a registry of local GGUF models with an
+the LM Studio AppImage plus the official llmster/CLI bundle, runs the headless
+OpenAI-compatible server as a systemd user service, and manages a registry of local GGUF models with an
 interactive installer for choosing which models to install, which stays loaded,
 and which the active "main" model switches to.
 
@@ -80,9 +80,9 @@ See the full cross-repository map in
 
 ## Install
 
-The **core** is just the LM Studio app + the serving service (`lm_studio_app` +
-`serve`); it runs no matter what else you pick. Everything model-related is
-optional and fully customizable through the `models` component's interactive
+The **core** is the LM Studio app, the official llmster/`lms` bundle, and the
+serving service; it runs no matter what else you pick. Everything model-related
+is optional and fully customizable through the `models` component's interactive
 menu, and the server starts fine before any model is downloaded (the boot script
 skips models that are not present locally).
 
@@ -100,11 +100,17 @@ Installing the LM Studio application itself writes to `/opt/lm-studio` and
 install, or run unprivileged to configure serving and models for an already
 installed LM Studio (root-only steps are skipped and reported).
 
+Every core run validates `~/.lmstudio/bin/lms --help`. A missing, truncated, or
+crashing executable is repaired with LM Studio's official headless installer
+before `lmstudio-serve.service` starts. AppImage extraction is staged and
+validated before replacing the installed GUI, so a failed download or extraction
+cannot leave a false version marker or an empty `/opt/lm-studio`.
+
 ## Components
 
 | id | description | default | role |
 |---|---|---|---|
-| `lm_studio_app` | LM Studio AppImage + CLI (root) | on | Applications |
+| `lm_studio_app` | LM Studio AppImage GUI (root) | on | Applications |
 | `serve` | serve.env, boot script, and `lmstudio-serve.service` user service | on | Serving |
 | `models` | Choose models to install + autostart, or add your own (interactive) | off | optional |
 
