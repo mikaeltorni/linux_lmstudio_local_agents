@@ -42,7 +42,7 @@ def test_models_component_advertises_nested_configurator():
 
 def test_configure_component_writes_selection_without_downloading(tmp_path):
     """The nested screen contract should persist choices but perform no download."""
-    selection = json.dumps({"selected_ids": ["qwen3-8b"], "autostart_ids": ["qwen3-8b"]})
+    selection = json.dumps({"selected_ids": ["qwen3.8-27b"], "autostart_ids": ["qwen3.8-27b"]})
     proc = _run(
         tmp_path,
         f"export LMLA_MODEL_SELECTION_JSON={selection!r}",
@@ -50,7 +50,7 @@ def test_configure_component_writes_selection_without_downloading(tmp_path):
     )
     assert proc.returncode == 0, proc.stderr
     catalog = _catalog(tmp_path)
-    assert [p["id"] for p in catalog["profiles"] if p["default_install"]] == ["qwen3-8b"]
+    assert [p["id"] for p in catalog["profiles"] if p["default_install"]] == ["qwen3.8-27b"]
     assert not (tmp_path / ".config/systemd/user/lmstudio-model-download.service").exists()
     before = json.dumps(catalog, sort_keys=True)
     repeated = _run(
@@ -98,18 +98,18 @@ def test_consumer_selection_writes_customized_catalog(tmp_path):
     """LMSTUDIO_INSTALL_MODELS installs only the named models in the catalog."""
     proc = _run(
         tmp_path,
-        'export LMSTUDIO_INSTALL_MODELS="vibethinker qwen3-8b"',
+        'export LMSTUDIO_INSTALL_MODELS="vibethinker qwen3.8-27b"',
         call="install_models",
     )
     assert proc.returncode == 0, proc.stderr
     catalog = _catalog(tmp_path)
     installed = [p["id"] for p in catalog["profiles"] if p["default_install"]]
-    assert set(installed) == {"vibethinker", "qwen3-8b"}
+    assert set(installed) == {"vibethinker", "qwen3.8-27b"}
     main = [p["id"] for p in catalog["profiles"] if p["default_main"]]
-    assert main == ["qwen3-8b"]
-    # Switch command exists for Qwen3-8B; keep-on vibethinker has no switch command.
+    assert main == ["qwen3.8-27b"]
+    # Switch command exists for Qwen3.8-27B; keep-on vibethinker has no switch command.
     bin_dir = tmp_path / ".local/bin"
-    assert (bin_dir / "qwen3-8b").exists()
+    assert (bin_dir / "qwen3.8-27b").exists()
     assert not (bin_dir / "vibethinker").exists()
     # Core tools are installed regardless.
     assert (bin_dir / "lmstudio-models").exists()
@@ -120,7 +120,7 @@ def test_fresh_additive_consumer_installs_only_requested_model(tmp_path):
     """An additive request on a clean home must not inherit every shipped default."""
     proc = _run(
         tmp_path,
-        'export LMSTUDIO_ADD_MODELS="qwen3-8b"\nexport LMSTUDIO_MAIN_MODEL="qwen3-8b"',
+        'export LMSTUDIO_ADD_MODELS="qwen3.8-27b"\nexport LMSTUDIO_MAIN_MODEL="qwen3.8-27b"',
         call="install_models",
     )
     assert proc.returncode == 0, proc.stderr
@@ -128,7 +128,7 @@ def test_fresh_additive_consumer_installs_only_requested_model(tmp_path):
         profile["id"] for profile in _catalog(tmp_path)["profiles"]
         if profile["default_install"]
     }
-    assert installed == {"qwen3-8b"}
+    assert installed == {"qwen3.8-27b"}
 
 
 def test_serve_preserves_customized_catalog(tmp_path):
@@ -184,7 +184,7 @@ def test_empty_selection_writes_core_only_catalog(tmp_path):
     catalog = _catalog(tmp_path)
     assert not any(p["default_install"] for p in catalog["profiles"])
     bin_dir = tmp_path / ".local/bin"
-    for cmd in ("qwen3-8b", "vibethinker"):
+    for cmd in ("qwen3.8-27b", "vibethinker"):
         assert not (bin_dir / cmd).exists()
     # The serving tools are still installed — the core is intact.
     assert (bin_dir / "lmstudio-models").exists()
@@ -204,15 +204,15 @@ def test_additive_selection_preserves_existing_custom_models(tmp_path):
 
     second = _run(
         tmp_path,
-        'export LMSTUDIO_ADD_MODELS="qwen3-8b"\nexport LMSTUDIO_MAIN_MODEL="qwen3-8b"',
+        'export LMSTUDIO_ADD_MODELS="qwen3.8-27b"\nexport LMSTUDIO_MAIN_MODEL="qwen3.8-27b"',
         call="install_models",
     )
     assert second.returncode == 0, second.stderr
     catalog = _catalog(tmp_path)
     installed = {p["id"] for p in catalog["profiles"] if p["default_install"]}
     main = [p["id"] for p in catalog["profiles"] if p["default_main"]]
-    assert {"my-model", "qwen3-8b"} <= installed
-    assert main == ["qwen3-8b"]
+    assert {"my-model", "qwen3.8-27b"} <= installed
+    assert main == ["qwen3.8-27b"]
 
 
 def test_custom_model_environment_adds_main_profile(tmp_path):
@@ -271,7 +271,7 @@ def test_default_path_installs_full_catalog(tmp_path):
     assert proc.returncode == 0, proc.stderr
     catalog = _catalog(tmp_path)
     installed = {p["id"] for p in catalog["profiles"] if p["default_install"]}
-    assert installed == {"vibethinker", "qwen3-8b"}
+    assert installed == {"vibethinker", "qwen3.8-27b"}
 
 
 def test_downloads_run_in_background_not_inline(tmp_path):
@@ -348,7 +348,7 @@ def test_uninstall_models_removes_assets_when_nothing_else_needs_them(tmp_path):
     """With no serve unit present the helpers are still fully cleaned up."""
     proc = _run(
         tmp_path,
-        'export LMSTUDIO_INSTALL_MODELS="qwen3-8b"',
+        'export LMSTUDIO_INSTALL_MODELS="qwen3.8-27b"',
         call="install_models\nuninstall_models",
     )
     assert proc.returncode == 0, proc.stderr

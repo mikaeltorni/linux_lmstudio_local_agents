@@ -151,6 +151,8 @@ def load_model(profile: dict, lms: Path) -> subprocess.CompletedProcess[str]:
     ]
     if profile.get("ttl"):
         args.extend(["--ttl", str(profile["ttl"])])
+    if profile.get("speculative_draft_mtp"):
+        args.append("--speculative-draft-mtp")
     args.extend([load_key, "-y"])
     return run_lms(lms, *args, check=False)
 

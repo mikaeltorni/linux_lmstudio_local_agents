@@ -3,7 +3,7 @@
 
 These exercise the pure planning/resolution helpers against the real registry in
 configs/lmstudio/model-profiles.json, so the shipped default layout (VibeThinker
-kept on and Qwen3-8B main) is locked in, plus the env-var switching
+kept on and Qwen3.8-27B main) is locked in, plus the env-var switching
 precedence and the validation rules.
 """
 
@@ -66,20 +66,20 @@ def test_find_profile_by_id_command_and_key(registry):
     """Profiles resolve by id, command alias, and model key."""
     assert lm.find_profile(registry, "vibethinker")["id"] == "vibethinker"
     assert lm.find_profile(registry, "vibethinker")["id"] == "vibethinker"
-    assert lm.find_profile(registry, "qwen3-8b")["id"] == "qwen3-8b"
+    assert lm.find_profile(registry, "qwen3.8-27b")["id"] == "qwen3.8-27b"
     assert lm.find_profile(registry, "nope") is None
 
 
 def test_default_plan_matches_shipped_layout(registry):
     """The default plan encodes the user's required default model layout."""
     plan = lm.default_plan(registry)
-    assert set(plan.install_ids) == {"vibethinker", "qwen3-8b"}
+    assert set(plan.install_ids) == {"vibethinker", "qwen3.8-27b"}
     assert plan.keep_on_ids == ("vibethinker",)
-    assert plan.main_id == "qwen3-8b"
+    assert plan.main_id == "qwen3.8-27b"
     assert plan.main_env_var == "LMSTUDIO_MAIN_MODEL"
     assert plan.switch_env_vars == {
         "vibethinker": "LMSTUDIO_USE_VIBETHINKER",
-        "qwen3-8b": "LMSTUDIO_USE_QWEN3_8B",
+        "qwen3.8-27b": "LMSTUDIO_USE_QWEN3_8_27B",
     }
 
 
@@ -89,10 +89,10 @@ def test_default_plan_keep_on_model_keys(registry):
     assert plan.keep_on_model_keys(registry) == ["vibethinker-1.5b"]
 
 
-def test_resolve_active_main_defaults_to_qwen3_8b(registry):
-    """With no switch variables set, the active main model is Qwen3-8B."""
+def test_resolve_active_main_defaults_to_qwen3_8_27b(registry):
+    """With no switch variables set, the active main model is Qwen3.8-27B."""
     plan = lm.default_plan(registry)
-    assert lm.resolve_active_main(registry, plan, env={})["model_key"] == "qwen3-8b"
+    assert lm.resolve_active_main(registry, plan, env={})["model_key"] == "qwen3.8-27b"
 
 
 def test_resolve_active_main_switch_var_wins(registry):
@@ -106,7 +106,7 @@ def test_resolve_active_main_switch_var_precedence_is_registry_order(registry):
     """When multiple switch vars are set, the first in registry order wins."""
     plan = lm.default_plan(registry)
     active = lm.resolve_active_main(
-        registry, plan, env={"LMSTUDIO_USE_VIBETHINKER": "yes", "LMSTUDIO_USE_QWEN3_8B": "on"}
+        registry, plan, env={"LMSTUDIO_USE_VIBETHINKER": "yes", "LMSTUDIO_USE_QWEN3_8_27B": "on"}
     )
     assert active["model_key"] == "vibethinker-1.5b"
 
@@ -122,31 +122,31 @@ def test_resolve_active_main_switch_var_beats_main_env_var(registry):
     """A per-model switch var takes precedence over LMSTUDIO_MAIN_MODEL."""
     plan = lm.default_plan(registry)
     active = lm.resolve_active_main(
-        registry, plan, env={"LMSTUDIO_MAIN_MODEL": "vibethinker", "LMSTUDIO_USE_QWEN3_8B": "1"}
+        registry, plan, env={"LMSTUDIO_MAIN_MODEL": "vibethinker", "LMSTUDIO_USE_QWEN3_8_27B": "1"}
     )
-    assert active["model_key"] == "qwen3-8b"
+    assert active["model_key"] == "qwen3.8-27b"
 
 
 def test_resolve_active_main_ignores_uninstalled_main_env_target(registry):
     """An LMSTUDIO_MAIN_MODEL that names an uninstalled model is ignored."""
     plan = lm.build_plan(
-        registry, install_ids=["qwen3-8b"], keep_on_ids=[], main_id="qwen3-8b"
+        registry, install_ids=["qwen3.8-27b"], keep_on_ids=[], main_id="qwen3.8-27b"
     )
     active = lm.resolve_active_main(registry, plan, env={"LMSTUDIO_MAIN_MODEL": "vibethinker"})
-    assert active["model_key"] == "qwen3-8b"
+    assert active["model_key"] == "qwen3.8-27b"
 
 
 def test_falsey_switch_var_does_not_switch(registry):
     """A non-truthy switch value does not change the active model."""
     plan = lm.default_plan(registry)
-    assert lm.resolve_active_main(registry, plan, env={"LMSTUDIO_USE_VIBETHINKER": "0"})["model_key"] == "qwen3-8b"
-    assert lm.resolve_active_main(registry, plan, env={"LMSTUDIO_USE_VIBETHINKER": ""})["model_key"] == "qwen3-8b"
+    assert lm.resolve_active_main(registry, plan, env={"LMSTUDIO_USE_VIBETHINKER": "0"})["model_key"] == "qwen3.8-27b"
+    assert lm.resolve_active_main(registry, plan, env={"LMSTUDIO_USE_VIBETHINKER": ""})["model_key"] == "qwen3.8-27b"
 
 
 def test_build_plan_rejects_empty_install(registry):
     """An empty install set is rejected."""
     with pytest.raises(ValueError):
-        lm.build_plan(registry, install_ids=[], keep_on_ids=[], main_id="qwen3-8b")
+        lm.build_plan(registry, install_ids=[], keep_on_ids=[], main_id="qwen3.8-27b")
 
 
 def test_build_plan_rejects_unknown_id(registry):
@@ -158,22 +158,22 @@ def test_build_plan_rejects_unknown_id(registry):
 def test_build_plan_rejects_keep_on_not_installed(registry):
     """Keep-on models must be part of the install set."""
     with pytest.raises(ValueError):
-        lm.build_plan(registry, install_ids=["qwen3-8b"], keep_on_ids=["vibethinker"], main_id="qwen3-8b")
+        lm.build_plan(registry, install_ids=["qwen3.8-27b"], keep_on_ids=["vibethinker"], main_id="qwen3.8-27b")
 
 
 def test_build_plan_rejects_main_not_installed(registry):
     """The main model must be part of the install set."""
     with pytest.raises(ValueError):
-        lm.build_plan(registry, install_ids=["vibethinker"], keep_on_ids=["vibethinker"], main_id="qwen3-8b")
+        lm.build_plan(registry, install_ids=["vibethinker"], keep_on_ids=["vibethinker"], main_id="qwen3.8-27b")
 
 
 def test_build_plan_switch_var_override(registry):
     """Explicit switch-var overrides win over the registry defaults."""
     plan = lm.build_plan(
         registry,
-        install_ids=["vibethinker", "qwen3-8b"],
+        install_ids=["vibethinker", "qwen3.8-27b"],
         keep_on_ids=[],
-        main_id="qwen3-8b",
+        main_id="qwen3.8-27b",
         switch_env_vars={"vibethinker": "LMSTUDIO_BACKUP"},
     )
     assert plan.switch_env_vars["vibethinker"] == "LMSTUDIO_BACKUP"
@@ -183,7 +183,7 @@ def test_build_plan_switch_var_override(registry):
 def test_cli_active_main_and_keep_on(registry, capsys):
     """The CLI prints the default active main and keep-on model keys."""
     assert lm.main(["active-main", "--catalog", str(CATALOG)]) == 0
-    assert capsys.readouterr().out.strip() == "qwen3-8b"
+    assert capsys.readouterr().out.strip() == "qwen3.8-27b"
     assert lm.main(["keep-on", "--catalog", str(CATALOG)]) == 0
     assert capsys.readouterr().out.strip() == "vibethinker-1.5b"
 
@@ -192,7 +192,7 @@ def test_cli_default_plan_json(capsys):
     """The default-plan subcommand emits valid JSON describing the plan."""
     assert lm.main(["default-plan", "--catalog", str(CATALOG)]) == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["main_id"] == "qwen3-8b"
+    assert payload["main_id"] == "qwen3.8-27b"
     assert payload["keep_on_ids"] == ["vibethinker"]
 
 
@@ -201,19 +201,21 @@ def test_boot_load_specs_default_order(registry):
     plan = lm.default_plan(registry)
     specs = lm.boot_load_specs(registry, plan, env={})
     keys = [spec["model_key"] for spec in specs]
-    assert keys == ["vibethinker-1.5b", "qwen3-8b"]
+    assert keys == ["vibethinker-1.5b", "qwen3.8-27b"]
     # Each spec carries the lms load flags.
     assert set(lm.BOOT_LOAD_FIELDS).issubset(specs[0].keys())
     assert specs[0]["gpu"] == "off"
     assert specs[1]["gpu"] == "max"
     assert specs[1]["context_length"] == 40960
+    assert specs[0]["speculative_draft_mtp"] is False
+    assert specs[1]["speculative_draft_mtp"] is True
 
 
 def test_boot_load_specs_follows_switch_var(registry):
     """A switch var changes the main model loaded after the keep-on models."""
     plan = lm.default_plan(registry)
-    specs = lm.boot_load_specs(registry, plan, env={"LMSTUDIO_USE_QWEN3_8B": "1"})
-    assert [spec["model_key"] for spec in specs] == ["vibethinker-1.5b", "qwen3-8b"]
+    specs = lm.boot_load_specs(registry, plan, env={"LMSTUDIO_USE_QWEN3_8_27B": "1"})
+    assert [spec["model_key"] for spec in specs] == ["vibethinker-1.5b", "qwen3.8-27b"]
 
 
 def test_boot_load_specs_no_duplicate_when_main_is_keep_on(registry):
@@ -227,7 +229,7 @@ def test_boot_load_specs_no_duplicate_when_main_is_keep_on(registry):
 
 def test_installable_ids_default_is_all_default_install(registry):
     """With no selection, every default_install model is installable."""
-    assert set(lm.installable_ids(registry)) == {"vibethinker", "qwen3-8b"}
+    assert set(lm.installable_ids(registry)) == {"vibethinker", "qwen3.8-27b"}
 
 
 def test_installable_ids_honors_selection(registry):
@@ -264,7 +266,7 @@ def test_cli_download_list_default_lists_all(registry, capsys, monkeypatch):
     assert lm.main(["download-list", "--catalog", str(CATALOG)]) == 0
     lines = [line for line in capsys.readouterr().out.splitlines() if line.strip()]
     ids = {line.split(lm.DOWNLOAD_FIELD_SEPARATOR)[0] for line in lines}
-    assert ids == {"vibethinker", "qwen3-8b"}
+    assert ids == {"vibethinker", "qwen3.8-27b"}
 
 
 def test_download_list_preserves_empty_catalog_source(registry, capsys, monkeypatch):
@@ -335,12 +337,12 @@ def test_grouped_env_selection_replaces_startup_peer_but_ungrouped_is_additive(r
     registry["profiles"][0]["default_startup"] = True
     registry["profiles"][1]["default_startup"] = False
     plan = lm.default_plan(registry)
-    grouped = lm.boot_load_specs(registry, plan, env={"LMSTUDIO_USE_QWEN3_8B": "1"})
-    assert [item["model_key"] for item in grouped] == ["qwen3-8b"]
+    grouped = lm.boot_load_specs(registry, plan, env={"LMSTUDIO_USE_QWEN3_8_27B": "1"})
+    assert [item["model_key"] for item in grouped] == ["qwen3.8-27b"]
     registry["profiles"][1]["group"] = 0
-    additive = lm.boot_load_specs(registry, plan, env={"LMSTUDIO_USE_QWEN3_8B": "1"})
+    additive = lm.boot_load_specs(registry, plan, env={"LMSTUDIO_USE_QWEN3_8_27B": "1"})
     assert [item["model_key"] for item in additive] == [
-        "vibethinker-1.5b", "qwen3-8b"
+        "vibethinker-1.5b", "qwen3.8-27b"
     ]
 
 
@@ -432,13 +434,13 @@ def test_apply_selection_default_layout_roundtrips(registry):
     """Selecting both shipped models with autostart reproduces default_plan."""
     customized = lm.apply_install_selection(
         registry,
-        selected_ids=["vibethinker", "qwen3-8b"],
-        autostart_ids=["vibethinker", "qwen3-8b"],
+        selected_ids=["vibethinker", "qwen3.8-27b"],
+        autostart_ids=["vibethinker", "qwen3.8-27b"],
     )
     plan = lm.default_plan(customized)
-    assert plan.main_id == "qwen3-8b"
+    assert plan.main_id == "qwen3.8-27b"
     assert plan.keep_on_ids == ("vibethinker",)    # autostart minus main
-    assert set(plan.install_ids) == {"vibethinker", "qwen3-8b"}
+    assert set(plan.install_ids) == {"vibethinker", "qwen3.8-27b"}
 
 
 def test_apply_selection_subset_reassigns_main(registry):
@@ -456,14 +458,14 @@ def test_apply_selection_not_autostarted_is_not_boot_loaded(registry):
     """A selected-but-not-autostarted model is installed but not loaded at boot."""
     customized = lm.apply_install_selection(
         registry,
-        selected_ids=["vibethinker", "qwen3-8b"],
-        autostart_ids=["qwen3-8b"],
+        selected_ids=["vibethinker", "qwen3.8-27b"],
+        autostart_ids=["qwen3.8-27b"],
     )
     plan = lm.default_plan(customized)
     specs = lm.boot_load_specs(customized, plan, env={})
     keys = [s["model_key"] for s in specs]
     assert "vibethinker-1.5b" not in keys
-    assert "qwen3-8b" in keys
+    assert "qwen3.8-27b" in keys
 
 
 def test_apply_selection_adds_custom_model(registry):
@@ -490,7 +492,7 @@ def test_apply_selection_rejects_unknown_and_unselected_autostart(registry):
         lm.apply_install_selection(registry, selected_ids=["nope"], autostart_ids=[])
     with pytest.raises(ValueError):
         lm.apply_install_selection(
-            registry, selected_ids=["vibethinker"], autostart_ids=["qwen3-8b"]
+            registry, selected_ids=["vibethinker"], autostart_ids=["qwen3.8-27b"]
         )
 
 

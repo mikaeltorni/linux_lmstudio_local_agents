@@ -262,7 +262,10 @@ def resolve_active_main(registry: dict, plan: ModelPlan, env: dict[str, str] | N
 
 
 #: Fields a boot loader needs to run ``lms load`` for one model, in order.
-BOOT_LOAD_FIELDS = ("model_key", "context_length", "gpu", "parallel", "ttl", "identifier")
+BOOT_LOAD_FIELDS = (
+    "model_key", "context_length", "gpu", "parallel", "ttl", "identifier",
+    "speculative_draft_mtp",
+)
 
 
 def boot_load_specs(registry: dict, plan: ModelPlan, env: dict[str, str] | None = None) -> list[dict]:
@@ -309,6 +312,7 @@ def boot_load_specs(registry: dict, plan: ModelPlan, env: dict[str, str] | None 
             "parallel": profile["parallel"],
             "ttl": profile.get("ttl", 0),
             "identifier": profile.get("identifier") or profile["model_key"],
+            "speculative_draft_mtp": bool(profile.get("speculative_draft_mtp", False)),
         })
 
     for profile in active_profiles:
@@ -432,6 +436,7 @@ CUSTOM_PROFILE_DEFAULTS = {
     "gpu": "max",
     "context_length": 131072,
     "parallel": 1,
+    "speculative_draft_mtp": False,
     "ttl": 0,
     "identifier": "",
     "sha256": "",
@@ -504,7 +509,7 @@ def normalize_custom_profile(spec: dict) -> dict:
         "custom": True,
     })
     # Allow explicit serving-flag overrides from the spec.
-    for key in ("gpu", "context_length", "parallel", "ttl", "identifier"):
+    for key in ("gpu", "context_length", "parallel", "ttl", "identifier", "speculative_draft_mtp"):
         if spec.get(key) not in (None, ""):
             profile[key] = spec[key]
     if sha256:
