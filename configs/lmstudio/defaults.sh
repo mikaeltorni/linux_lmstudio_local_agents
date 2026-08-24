@@ -21,7 +21,9 @@ LMSTUDIO_DAEMON_SETTLE_SECONDS="8"    # wait after lms daemon up before loading
 LMSTUDIO_DAEMON_MAX_ATTEMPTS="12"     # daemon-up readiness polls before giving up (cold boot is slow)
 LMSTUDIO_ENABLE_LOCAL_SERVICE="1"
 LMSTUDIO_CUDA_VISIBLE_DEVICES=""
-LMSTUDIO_LLM_RUNTIME_ALIAS="llama.cpp-linux-x86_64-nvidia-cuda-avx2@2.20.1"
+# Newer llama.cpp materially improves Qwen3 prompt and generation throughput on
+# NVIDIA GPUs while retaining the CUDA 12 compatibility floor used by LM Studio.
+LMSTUDIO_LLM_RUNTIME_ALIAS="llama.cpp-linux-x86_64-nvidia-cuda12-avx2@2.28.2"
 LMSTUDIO_USER_SERVICE_NAME="lmstudio-serve.service"
 LMSTUDIO_SERVER_START_EXTRA=""
 

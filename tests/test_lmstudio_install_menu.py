@@ -56,28 +56,23 @@ def _silent_writer(_text):
 
 
 def test_initial_state_matches_shipped_defaults(profiles):
-    """The menu opens on the shipped layout: both installed, only VibeThinker on startup.
-
-    Ornstein ships installed but ``default_startup: false``, so it opens
-    startup-off — the user can turn autoloading on with the ``s<n>`` command (or
-    ``LMSTUDIO_USE_ORNSTEIN``) without it consuming VRAM by default.
-    """
+    """The shipped VibeThinker and Qwen3-8B profiles both start automatically."""
     state = menu.SelectionState(profiles)
     sel = state.selection()
-    assert set(sel["selected_ids"]) == {"vibethinker", "ornstein"}
-    assert set(sel["autostart_ids"]) == {"vibethinker"}
+    assert set(sel["selected_ids"]) == {"vibethinker", "qwen3-8b"}
+    assert set(sel["autostart_ids"]) == {"vibethinker", "qwen3-8b"}
     rendered = menu.render(state)
     assert "LMSTUDIO_USE_VIBETHINKER" in rendered
-    assert "LMSTUDIO_USE_ORNSTEIN" in rendered
+    assert "LMSTUDIO_USE_QWEN3_8B" in rendered
 
 
 def test_toggle_install_clears_autostart(profiles):
     """Deselecting a model also removes it from autostart."""
     state = menu.SelectionState(profiles)
-    state.toggle_install(2)  # Ornstein (installed + autostart) -> off
+    state.toggle_install(2)  # Qwen3-8B (installed + autostart) -> off
     sel = state.selection()
-    assert "ornstein" not in sel["selected_ids"]
-    assert "ornstein" not in sel["autostart_ids"]
+    assert "qwen3-8b" not in sel["selected_ids"]
+    assert "qwen3-8b" not in sel["autostart_ids"]
 
 
 def test_toggle_autostart_selects_model(profiles):
@@ -86,15 +81,15 @@ def test_toggle_autostart_selects_model(profiles):
     state.toggle_install(2)
     state.toggle_autostart(2)
     sel = state.selection()
-    assert "ornstein" in sel["autostart_ids"]
-    assert "ornstein" in sel["selected_ids"]
+    assert "qwen3-8b" in sel["autostart_ids"]
+    assert "qwen3-8b" in sel["selected_ids"]
 
 
 def test_run_menu_scripted_toggles(profiles):
     """A scripted session toggles install/autostart then installs."""
-    reader = _scripted_reader(["2", "b1", ""])  # drop ornstein, autostart->off vibethinker, done
+    reader = _scripted_reader(["2", "b1", ""])  # drop qwen3-8b, autostart->off vibethinker, done
     sel = menu.run_menu(profiles, reader=reader, writer=_silent_writer)
-    assert "ornstein" not in sel["selected_ids"]
+    assert "qwen3-8b" not in sel["selected_ids"]
     assert "vibethinker" not in sel["autostart_ids"]
     assert "vibethinker" in sel["selected_ids"]
 

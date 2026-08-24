@@ -67,6 +67,15 @@ def test_defaults_define_daemon_max_attempts():
     assert 'LMSTUDIO_DAEMON_MAX_ATTEMPTS="${LMSTUDIO_DAEMON_MAX_ATTEMPTS:-12}"' in lib
 
 
+def test_defaults_select_qwen_optimized_cuda_runtime():
+    """The boot service selects the benchmarked CUDA runtime used for Qwen3."""
+    source = DEFAULTS.read_text(encoding="utf-8")
+    assert (
+        'LMSTUDIO_LLM_RUNTIME_ALIAS="llama.cpp-linux-x86_64-nvidia-cuda12-avx2@2.28.2"'
+        in source
+    )
+
+
 def test_python_logging_helper_is_installed_with_selector():
     """The installed selector has its centralized logging dependency beside it."""
     source = (ROOT / "lib" / "lm_studio.sh").read_text(encoding="utf-8")

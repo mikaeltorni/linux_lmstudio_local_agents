@@ -189,10 +189,9 @@ def autostarts_by_default(profile: dict) -> bool:
     """Whether a profile is boot-loaded into VRAM by default.
 
     An explicit ``default_startup`` flag wins so a model can ship
-    installed-but-idle: e.g. Ornstein stays downloaded and switchable via its
-    ``switch_env_var`` (``LMSTUDIO_USE_ORNSTEIN=1``) yet never occupies VRAM at
-    boot. Profiles without the key keep the historical behaviour — keep-on and
-    main models autostart.
+    installed-but-idle while remaining switchable via its ``switch_env_var``.
+    Profiles without the key keep the historical behaviour — keep-on and main
+    models autostart.
     """
     if "default_startup" in profile:
         return bool(profile.get("default_startup"))
