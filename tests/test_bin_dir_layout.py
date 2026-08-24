@@ -71,9 +71,17 @@ def test_defaults_select_qwen_optimized_cuda_runtime():
     """The boot service selects the benchmarked CUDA runtime used for Qwen3."""
     source = DEFAULTS.read_text(encoding="utf-8")
     assert (
-        'LMSTUDIO_LLM_RUNTIME_ALIAS="llama.cpp-linux-x86_64-nvidia-cuda12-avx2@2.28.2"'
+        'LMSTUDIO_LLM_RUNTIME_ALIAS="llama.cpp-linux-x86_64-nvidia-cuda12-avx2@2.29.1"'
         in source
     )
+
+
+def test_boot_script_forwards_native_mtp_speculation():
+    """Model profiles can make native MTP speculative decoding explicit at boot."""
+    source = BOOT.read_text(encoding="utf-8")
+    assert "speculative_draft_mtp" in source
+    assert "speculative_args=(--speculative-draft-mtp)" in source
+    assert '"${speculative_args[@]}"' in source
 
 
 def test_python_logging_helper_is_installed_with_selector():

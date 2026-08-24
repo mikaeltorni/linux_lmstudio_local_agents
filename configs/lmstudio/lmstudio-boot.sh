@@ -119,7 +119,7 @@ for _ in 1 2 3 4 5; do start_lmstudio_server && break; sleep 3; done
 
 # Load each model the resolver selected (keep-on models, then the active main).
 if [ -x "$MODELS_PY" ] || command -v python3 >/dev/null 2>&1; then
-  while IFS=$'\t' read -r model_key context gpu parallel ttl identifier; do
+  while IFS=$'\t' read -r model_key context gpu parallel ttl identifier speculative_draft_mtp; do
     [ -n "$model_key" ] || continue
     if ! model_key_exists "$model_key" && ! model_key_exists "${model_key##*/}"; then
       echo "[boot] model not found locally, skipping: $model_key" >&2
@@ -139,9 +139,13 @@ if [ -x "$MODELS_PY" ] || command -v python3 >/dev/null 2>&1; then
     done
     ttl_args=()
     [ "${ttl:-0}" != "0" ] && [ -n "${ttl:-}" ] && ttl_args=(--ttl "$ttl")
+    speculative_args=()
+    case "${speculative_draft_mtp:-false}" in
+      1|true|TRUE|yes|YES|on|ON) speculative_args=(--speculative-draft-mtp) ;;
+    esac
     # shellcheck disable=SC2086
     "$LMS_CLI" load -c "$context" --gpu "$gpu" --parallel "$parallel" \
-      --identifier "$identifier" "${ttl_args[@]}" "$load_key" -y || \
+      --identifier "$identifier" "${ttl_args[@]}" "${speculative_args[@]}" "$load_key" -y || \
       echo "[boot] failed to load $model_key" >&2
   done < <(
     if [ -x "$MODELS_PY" ]; then "$MODELS_PY" boot-load --catalog "$CATALOG"

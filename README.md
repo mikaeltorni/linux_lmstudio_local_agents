@@ -34,7 +34,7 @@ Every model in [`configs/lmstudio/model-profiles.json`](configs/lmstudio/model-p
 carries three install-time fields:
 
 - **`switch_env_var`** — a per-model environment variable. Set it truthy and the
-  active served model switches to that model (e.g. `LMSTUDIO_USE_QWEN3_8B=1`).
+  active served model switches to that model (e.g. `LMSTUDIO_USE_QWEN3_8_27B=1`).
 - **`default_keep_on`** — the model is always kept loaded (it is not part of the
   switchable "main" slot). The small CPU-resident VibeThinker model is kept on by
   default so editor autocomplete is always available.
@@ -55,7 +55,7 @@ default (non-interactive) install ships these fields ready to go:
 | Model | Role | Default |
 |---|---|---|
 | `vibethinker` (VibeThinker 1.5B) | editor autocomplete | **kept on** (`LMSTUDIO_USE_VIBETHINKER`) |
-| `qwen3-8b` (Qwen3 8B, Unsloth Dynamic 2.0 UD-Q4_K_XL) | fast primary coding agent, 40,960-token context | **main + startup** (`LMSTUDIO_USE_QWEN3_8B`, `LMSTUDIO_MAIN_MODEL`) |
+| `qwen3.8-27b` (Qwen3.8-27B, Unsloth Dynamic 3.0 UD-Q4_K_XL) | agentic coding powerhouse, 40,960-token context | **main + startup** (`LMSTUDIO_USE_QWEN3_8_27B`, `LMSTUDIO_MAIN_MODEL`) |
 
 At runtime the active main model is resolved by precedence: the first model whose
 `switch_env_var` is truthy, else `LMSTUDIO_MAIN_MODEL` when it names a model, else
@@ -69,7 +69,7 @@ Installs and runs **standalone**; siblings below only enhance it.
   [`linux_installation_scripts_functions`](https://github.com/mikaeltorni/linux_installation_scripts_functions) —
   loaded from a sibling checkout when present, otherwise downloaded on demand.
 - **Consumers:** [`linux_codex_claude_code_setup`](https://github.com/mikaeltorni/linux_codex_claude_code_setup)
-  exposes Qwen3-8B and custom switchable coding models;
+  exposes Qwen3.8-27B and custom switchable coding models;
   [`linux_programming_setup`](https://github.com/mikaeltorni/linux_programming_setup)
   exposes VibeThinker and custom switch-free autocomplete models; and
   [`agent_command_center`](https://github.com/mikaeltorni/agent_command_center)
