@@ -347,6 +347,9 @@ def installable_ids(registry: dict, selected: list[str] | None = None) -> list[s
 
 #: Fields the downloader needs per model, in order.
 DOWNLOAD_FIELDS = ("id", "download_url", "download_source", "model_path", "sha256")
+# A non-whitespace separator is required because Bash collapses adjacent tab
+# delimiters and would shift fields when download_source is intentionally empty.
+DOWNLOAD_FIELD_SEPARATOR = "\x1f"
 
 
 def download_specs(registry: dict, selected: list[str] | None = None) -> list[dict]:
@@ -717,7 +720,7 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "download-list":
         selected = _parse_selection(os.environ.get("LMSTUDIO_INSTALL_MODELS"))
         for spec in download_specs(registry, selected):
-            print("\t".join(str(spec[field]) for field in DOWNLOAD_FIELDS))
+            print(DOWNLOAD_FIELD_SEPARATOR.join(str(spec[field]) for field in DOWNLOAD_FIELDS))
     else:
         print(json.dumps(plan.as_dict(), indent=2, sort_keys=True))
     return 0
