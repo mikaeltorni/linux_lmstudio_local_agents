@@ -31,7 +31,9 @@ if [ ! -x "$MODELS_CLI" ]; then
 fi
 
 pending=0
-while IFS=$'\t' read -r model_id download_url download_source model_path sha256; do
+# Unit Separator is non-whitespace, so an empty catalog source remains an empty
+# field and direct GGUF URLs cannot be mistaken for `lms get` model specs.
+while IFS=$'\x1f' read -r model_id download_url download_source model_path sha256; do
   if [ -n "${download_source:-}" ]; then
     log "downloading model through LM Studio: $model_id ($download_source)"
     if ! PATH="$HOME/.lmstudio/bin:$HOME/.local/bin:$PATH" lms get --gguf --yes "$download_source"; then

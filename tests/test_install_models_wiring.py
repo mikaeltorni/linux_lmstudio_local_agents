@@ -261,6 +261,8 @@ def test_download_scripts_route_catalog_sources_through_lms_get():
     background = (ROOT / "scripts" / "lmstudio_download_models.sh").read_text(encoding="utf-8")
     assert 'lms get --gguf --yes "$download_source"' in library
     assert 'lms get --gguf --yes "$download_source"' in background
+    assert "while IFS=$'\\x1f' read -r model_id" in library
+    assert "while IFS=$'\\x1f' read -r model_id" in background
 
 
 def test_default_path_installs_full_catalog(tmp_path):

@@ -329,7 +329,9 @@ lmla_download_models() {
   [ "${LMSTUDIO_DOWNLOAD_MODELS:-1}" = "1" ] || { msg "Skipping model downloads (LMSTUDIO_DOWNLOAD_MODELS=0)"; return 0; }
   local catalog
   catalog="$(lmla_target_catalog)"
-  while IFS=$'\t' read -r model_id download_url download_source model_path sha256; do
+  # Unit Separator is non-whitespace, so Bash preserves an empty source field
+  # between the direct URL and model path instead of shifting later columns.
+  while IFS=$'\x1f' read -r model_id download_url download_source model_path sha256; do
     if [ -n "$download_source" ]; then
       msg "Downloading LM Studio model from catalog: $model_id"
       run_as_target env PATH="$TARGET_HOME/.lmstudio/bin:$TARGET_HOME/.local/bin:$PATH" \

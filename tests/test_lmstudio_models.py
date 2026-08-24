@@ -255,15 +255,26 @@ def test_cli_download_list_honors_env(registry, capsys, monkeypatch):
     assert lm.main(["download-list", "--catalog", str(CATALOG)]) == 0
     lines = [line for line in capsys.readouterr().out.splitlines() if line.strip()]
     assert len(lines) == 1
-    assert lines[0].split("\t")[0] == "vibethinker"
+    assert lines[0].split(lm.DOWNLOAD_FIELD_SEPARATOR)[0] == "vibethinker"
 
 
 def test_cli_download_list_default_lists_all(registry, capsys, monkeypatch):
     """Without the env var, download-list lists every default_install model."""
     monkeypatch.delenv("LMSTUDIO_INSTALL_MODELS", raising=False)
     assert lm.main(["download-list", "--catalog", str(CATALOG)]) == 0
-    ids = {line.split("\t")[0] for line in capsys.readouterr().out.splitlines() if line.strip()}
+    lines = [line for line in capsys.readouterr().out.splitlines() if line.strip()]
+    ids = {line.split(lm.DOWNLOAD_FIELD_SEPARATOR)[0] for line in lines}
     assert ids == {"vibethinker", "qwen3-8b"}
+
+
+def test_download_list_preserves_empty_catalog_source(registry, capsys, monkeypatch):
+    """Direct URLs retain an empty source field for the shell downloaders."""
+    monkeypatch.delenv("LMSTUDIO_INSTALL_MODELS", raising=False)
+    assert lm.main(["download-list", "--catalog", str(CATALOG)]) == 0
+    fields = capsys.readouterr().out.splitlines()[0].split(lm.DOWNLOAD_FIELD_SEPARATOR)
+    assert len(fields) == 5
+    assert fields[1].startswith("https://")
+    assert fields[2] == ""
 
 
 # --- Custom model normalization -------------------------------------------------
