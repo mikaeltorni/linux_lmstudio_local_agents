@@ -121,13 +121,13 @@ for _ in 1 2 3 4 5; do start_lmstudio_server && break; sleep 3; done
 
 # Load each model the resolver selected (keep-on models, then the active main).
 if [ -x "$MODELS_PY" ] || command -v python3 >/dev/null 2>&1; then
-  while IFS=$'\x1f' read -r model_key context gpu parallel ttl identifier speculative_draft_mtp k_cache v_cache context_checkpoints eval_batch physical_batch flash_attention offload_kv_cache; do
+  while IFS=$'\x1f' read -r model_key load_key context gpu parallel ttl identifier speculative_draft_mtp k_cache v_cache context_checkpoints eval_batch physical_batch flash_attention offload_kv_cache; do
     [ -n "$model_key" ] || continue
-    if ! model_key_exists "$model_key" && ! model_key_exists "${model_key##*/}"; then
+    if ! model_key_exists "$load_key" && ! model_key_exists "${load_key##*/}"; then
       echo "[boot] model not found locally, skipping: $model_key" >&2
       continue
     fi
-    load_key="$(resolve_load_key "$model_key")"
+    load_key="$(resolve_load_key "$load_key")"
     # Unload first if already loaded, waiting for completion. When identifier is empty,
     # LM Studio auto-generates one from the model key, so check for both.
     "$LMS_CLI" unload "$identifier" >/dev/null 2>&1 || true
