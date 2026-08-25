@@ -240,6 +240,7 @@ def test_boot_load_specs_default_order(registry):
     assert specs[1]["gpu"] == "max"
     assert specs[1]["context_length"] == 131072
     assert specs[1]["load_key"] == "qwen3.8-27b@q3_k_xl"
+    assert specs[1]["model_path"].endswith("Qwen3.8-27B-UD-Q3_K_XL.gguf")
     assert specs[0]["speculative_draft_mtp"] is False
     assert specs[1]["speculative_draft_mtp"] is True
     assert specs[1]["k_cache_quantization_type"] == "q8_0"
