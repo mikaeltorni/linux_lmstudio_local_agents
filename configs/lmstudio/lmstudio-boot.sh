@@ -105,15 +105,21 @@ start_lmstudio_server() {
   return "$status"
 }
 
-model_key_exists() {
-  "$LMS_CLI" ls --json 2>/dev/null | grep -Fq "\"modelKey\":\"$1\""
-}
-
 resolve_load_key() {
-  local model="$1" short="${1##*/}"
-  if model_key_exists "$model"; then printf '%s\n' "$model"
-  elif [ "$short" != "$model" ] && model_key_exists "$short"; then printf '%s\n' "$short"
-  else printf '%s\n' "$model"; fi
+  local desired="$1" model_path="${2:-}"
+  "$LMS_CLI" ls --json 2>/dev/null | python3 -c '
+import json, sys
+desired, model_path = sys.argv[1:3]
+items = json.load(sys.stdin)
+for item in items:
+    if item.get("modelKey") == desired:
+        print(item["modelKey"])
+        raise SystemExit(0)
+for item in items:
+    if model_path and (item.get("path") == model_path or item.get("indexedModelIdentifier") == model_path):
+        print(item["modelKey"])
+        raise SystemExit(0)
+' "$desired" "$model_path"
 }
 
 restart_lmstudio_daemon
@@ -121,13 +127,13 @@ for _ in 1 2 3 4 5; do start_lmstudio_server && break; sleep 3; done
 
 # Load each model the resolver selected (keep-on models, then the active main).
 if [ -x "$MODELS_PY" ] || command -v python3 >/dev/null 2>&1; then
-  while IFS=$'\x1f' read -r model_key load_key context gpu parallel ttl identifier speculative_draft_mtp k_cache v_cache context_checkpoints eval_batch physical_batch flash_attention offload_kv_cache; do
+  while IFS=$'\x1f' read -r model_key load_key model_path context gpu parallel ttl identifier speculative_draft_mtp k_cache v_cache context_checkpoints eval_batch physical_batch flash_attention offload_kv_cache; do
     [ -n "$model_key" ] || continue
-    if ! model_key_exists "$load_key" && ! model_key_exists "${load_key##*/}"; then
+    load_key="$(resolve_load_key "$load_key" "$model_path")"
+    if [ -z "$load_key" ]; then
       echo "[boot] model not found locally, skipping: $model_key" >&2
       continue
     fi
-    load_key="$(resolve_load_key "$load_key")"
     # Unload first if already loaded, waiting for completion. When identifier is empty,
     # LM Studio auto-generates one from the model key, so check for both.
     "$LMS_CLI" unload "$identifier" >/dev/null 2>&1 || true
