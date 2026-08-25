@@ -92,6 +92,8 @@ def test_boot_script_uses_sdk_loader_for_advanced_profiles():
     assert 'advanced_args+=(--k-cache "$k_cache")' in source
     assert 'advanced_args+=(--v-cache "$v_cache")' in source
     assert 'advanced_args+=(--context-checkpoints "$context_checkpoints")' in source
+    assert "read -r model_key load_key context" in source
+    assert 'resolve_load_key "$load_key"' in source
 
 
 def test_python_logging_helper_is_installed_with_selector():

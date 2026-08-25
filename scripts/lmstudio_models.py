@@ -301,7 +301,7 @@ def resolve_active_main(registry: dict, plan: ModelPlan, env: dict[str, str] | N
 
 #: Fields a boot loader needs to run ``lms load`` for one model, in order.
 BOOT_LOAD_FIELDS = (
-    "model_key", "context_length", "gpu", "parallel", "ttl", "identifier",
+    "model_key", "load_key", "context_length", "gpu", "parallel", "ttl", "identifier",
     "speculative_draft_mtp", "k_cache_quantization_type",
     "v_cache_quantization_type", "context_checkpoints", "eval_batch_size",
     "physical_batch_size", "flash_attention", "offload_kv_cache_to_gpu",
@@ -349,6 +349,7 @@ def boot_load_specs(registry: dict, plan: ModelPlan, env: dict[str, str] | None 
         seen.add(profile["id"])
         order.append({
             "model_key": profile["model_key"],
+            "load_key": profile.get("load_key") or profile["model_key"],
             "context_length": profile["context_length"],
             "gpu": profile["gpu"],
             "parallel": profile["parallel"],

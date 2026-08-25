@@ -62,6 +62,8 @@ load` does not expose KV-cache quantization or context-checkpoint controls. The
 installer deploys `lmstudio-sdk-loader.mjs`, and full root installs include
 Node.js. The helper locates the SDK bundled with LM Studio's standard plugins;
 its load transitions and failures are written to the service journal.
+The public API identifier remains `qwen3.8-27b`; an internal quant-specific
+`load_key` selects Q3 deterministically when multiple local variants exist.
 
 At runtime the active main model is resolved by precedence: the first model whose
 `switch_env_var` is truthy, else `LMSTUDIO_MAIN_MODEL` when it names a model, else

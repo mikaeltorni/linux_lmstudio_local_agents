@@ -125,22 +125,22 @@ def model_matches_profile(item: dict, profile: dict) -> bool:
 
 def resolve_load_key(profile: dict, lms: Path) -> str:
     """Resolve a profile to the local LM Studio model key used by `lms load`."""
+    configured_key = profile.get("load_key") or profile["model_key"]
     listed = run_lms(lms, "ls", "--json", check=False)
     if listed.returncode == 0:
         try:
             items = json.loads(listed.stdout)
-            profile_key = profile["model_key"]
-            exact = [item for item in items if item.get("modelKey") == profile_key]
+            exact = [item for item in items if item.get("modelKey") == configured_key]
             if exact:
-                return exact[0].get("modelKey") or profile_key
+                return exact[0].get("modelKey") or configured_key
             for item in items:
                 if model_matches_profile(item, profile):
-                    return item.get("modelKey") or profile_key
+                    return item.get("modelKey") or configured_key
         except json.JSONDecodeError:
             LOGGER.warning("Could not parse `lms ls --json`; using configured model key.")
     elif listed.stderr.strip():
         LOGGER.warning("`lms ls --json` failed: %s", listed.stderr.strip())
-    return profile["model_key"]
+    return configured_key
 
 
 @log_call(LOGGER)
