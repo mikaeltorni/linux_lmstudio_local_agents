@@ -15,6 +15,7 @@ import logging
 import sys
 from pathlib import Path
 import tempfile
+import pytest
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -31,6 +32,19 @@ SPEC.loader.exec_module(MOD)
 CATALOG = ROOT_DIR / "configs/lmstudio/model-profiles.json"
 
 
+@pytest.fixture(autouse=True)
+def _stub_advanced_loader(monkeypatch):
+    """Keep unit tests local while advanced-loader behavior has a focused test."""
+    original = MOD.subprocess.run
+
+    def run(args, **kwargs):
+        if any("lmstudio-sdk-loader" in str(arg) or "lmstudio_sdk_loader" in str(arg) for arg in args):
+            return MOD.subprocess.CompletedProcess(args, 0, "", "")
+        return original(args, **kwargs)
+
+    monkeypatch.setattr(MOD.subprocess, "run", run)
+
+
 def _profile(profiles, pid):
     """Return the profile with the given id."""
     return next(profile for profile in profiles if profile["id"] == pid)
@@ -42,8 +56,13 @@ def test_catalog_contains_expected_model_commands():
     profiles = {profile["id"]: profile for profile in catalog["profiles"]}
     assert set(profiles) == {"vibethinker", "qwen3.8-27b"}
     assert profiles["qwen3.8-27b"]["command"] == "qwen3.8-27b"
-    assert profiles["qwen3.8-27b"]["model_key"] == "qwen3.8-27b"
-    assert profiles["qwen3.8-27b"]["context_length"] == 40960
+    qwen = profiles["qwen3.8-27b"]
+    assert qwen["model_key"] == "qwen3.8-27b"
+    assert qwen["model_path"].endswith("Qwen3.8-27B-UD-Q3_K_XL.gguf")
+    assert qwen["context_length"] == 131072
+    assert qwen["k_cache_quantization_type"] == "q8_0"
+    assert qwen["v_cache_quantization_type"] == "q8_0"
+    assert qwen["context_checkpoints"] == 4
     assert profiles["qwen3.8-27b"]["default_startup"] is True
     assert profiles["vibethinker"]["model_key"] == "vibethinker-1.5b"
     assert profiles["vibethinker"]["default_keep_on"] is True
@@ -94,6 +113,11 @@ def test_switch_model_does_not_unload_keep_on(monkeypatch):
 def test_failed_switch_restores_previous_model(monkeypatch):
     """A failed target load restores the previously loaded switchable model."""
     profiles = MOD.load_profiles(CATALOG)
+    for field in (
+        "k_cache_quantization_type", "v_cache_quantization_type",
+        "context_checkpoints", "eval_batch_size", "physical_batch_size",
+    ):
+        profiles[1].pop(field, None)
     alternate = copy.deepcopy(_profile(profiles, "qwen3.8-27b"))
     alternate.update({
         "id": "alternate-coder",
@@ -258,6 +282,41 @@ def test_load_model_resolves_local_model_key_from_catalog_path(monkeypatch):
     assert load_call[load_call.index("--identifier") + 1] == "qwen3.8-27b"
     assert "--speculative-draft-mtp" in load_call
     assert "qwen3.8-27b-ud-q4_k_xl" in load_call
+
+
+def test_load_model_uses_sdk_loader_for_advanced_profile(monkeypatch, tmp_path):
+    """Advanced KV/checkpoint settings use the SDK loader unavailable in lms."""
+    profile = _profile(MOD.load_profiles(CATALOG), "qwen3.8-27b")
+    calls = []
+
+    def fake_run_lms(_lms, *args, check=True):
+        if args[:2] == ("ls", "--json"):
+            item = {"modelKey": "qwen3.8-27b@q3_k_xl", "path": profile["model_path"]}
+            return MOD.subprocess.CompletedProcess(args, 0, json.dumps([item]), "")
+        if args[:2] == ("ps", "--json"):
+            return MOD.subprocess.CompletedProcess(args, 0, "[]", "")
+        return MOD.subprocess.CompletedProcess(args, 0, "", "")
+
+    def fake_run(args, **kwargs):
+        calls.append((args, kwargs))
+        return MOD.subprocess.CompletedProcess(args, 0, "", "")
+
+    loader = tmp_path / "lmstudio-sdk-loader.mjs"
+    monkeypatch.setenv("LMSTUDIO_SDK_LOADER", str(loader))
+    monkeypatch.setenv("NODE_BIN", "/fake/node")
+    monkeypatch.setattr(MOD, "run_lms", fake_run_lms)
+    monkeypatch.setattr(MOD.subprocess, "run", fake_run)
+
+    result = MOD.load_model(profile, Path("/fake/lms"))
+
+    assert result.returncode == 0
+    args = calls[-1][0]
+    assert args[:2] == ["/fake/node", str(loader)]
+    assert args[args.index("--context-length") + 1] == "131072"
+    assert args[args.index("--k-cache") + 1] == "q8_0"
+    assert args[args.index("--v-cache") + 1] == "q8_0"
+    assert args[args.index("--context-checkpoints") + 1] == "4"
+    assert "--mtp" in args
 
 
 def test_switch_model_logs_state_transitions(monkeypatch, caplog):

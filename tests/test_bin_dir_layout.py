@@ -84,11 +84,23 @@ def test_boot_script_forwards_native_mtp_speculation():
     assert '"${speculative_args[@]}"' in source
 
 
+def test_boot_script_uses_sdk_loader_for_advanced_profiles():
+    """Boot must preserve KV quantization and checkpoint tuning unsupported by lms."""
+    source = BOOT.read_text(encoding="utf-8")
+    assert 'SDK_LOADER="${LMSTUDIO_SDK_LOADER:-$HOME/.local/bin/lmstudio-sdk-loader.mjs}"' in source
+    assert 'advanced_args=("$NODE_BIN" "$SDK_LOADER"' in source
+    assert 'advanced_args+=(--k-cache "$k_cache")' in source
+    assert 'advanced_args+=(--v-cache "$v_cache")' in source
+    assert 'advanced_args+=(--context-checkpoints "$context_checkpoints")' in source
+
+
 def test_python_logging_helper_is_installed_with_selector():
     """The installed selector has its centralized logging dependency beside it."""
     source = (ROOT / "lib" / "lm_studio.sh").read_text(encoding="utf-8")
     assert 'install -D -m 0644 "$LMLA_DIR/scripts/lmla_logging_utils.py" "$bin_dir/lmla_logging_utils.py"' in source
     assert 'install -D -m 0755 "$LMLA_DIR/scripts/lmstudio_model_selector.py" "$bin_dir/lmstudio-model"' in source
+    assert 'install -D -m 0755 "$LMLA_DIR/scripts/lmstudio_sdk_loader.mjs" "$bin_dir/lmstudio-sdk-loader.mjs"' in source
+    assert 'upgrade-catalog --catalog "$catalog_dst" --shipped-catalog "$LMLA_CONFIG_DIR/model-profiles.json"' in source
 
 
 def test_standalone_installer_defines_shared_helper_session_env():

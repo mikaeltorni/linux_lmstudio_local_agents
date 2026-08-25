@@ -10,6 +10,7 @@ precedence and the validation rules.
 from __future__ import annotations
 
 import importlib.util
+import copy
 import json
 import sys
 from pathlib import Path
@@ -196,6 +197,37 @@ def test_cli_default_plan_json(capsys):
     assert payload["keep_on_ids"] == ["vibethinker"]
 
 
+def test_upgrade_catalog_refreshes_builtin_profile_and_preserves_choices(registry):
+    """Schema upgrades replace shipped model data without losing user choices."""
+    installed = copy.deepcopy(registry)
+    installed["schema_version"] = 3
+    qwen = lm.find_profile(installed, "qwen3.8-27b")
+    qwen.update({
+        "model_path": "unsloth/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-Q4_K_XL.gguf",
+        "context_length": 40960,
+        "switch_env_var": "MY_QWEN_SWITCH",
+        "default_startup": False,
+        "group": 7,
+    })
+    custom = lm.normalize_custom_profile({
+        "name": "Private Coder",
+        "model_key": "private-coder",
+        "download_url": "https://example.com/private-coder.gguf",
+    })
+    installed["profiles"].append(custom)
+
+    upgraded = lm.upgrade_catalog(installed, registry)
+
+    upgraded_qwen = lm.find_profile(upgraded, "qwen3.8-27b")
+    assert upgraded["schema_version"] == 4
+    assert upgraded_qwen["model_path"].endswith("UD-Q3_K_XL.gguf")
+    assert upgraded_qwen["context_length"] == 131072
+    assert upgraded_qwen["switch_env_var"] == "MY_QWEN_SWITCH"
+    assert upgraded_qwen["default_startup"] is False
+    assert upgraded_qwen["group"] == 7
+    assert lm.find_profile(upgraded, custom["id"])["custom"] is True
+
+
 def test_boot_load_specs_default_order(registry):
     """The CPU autocomplete model loads first, followed by the Qwen main model."""
     plan = lm.default_plan(registry)
@@ -206,9 +238,14 @@ def test_boot_load_specs_default_order(registry):
     assert set(lm.BOOT_LOAD_FIELDS).issubset(specs[0].keys())
     assert specs[0]["gpu"] == "off"
     assert specs[1]["gpu"] == "max"
-    assert specs[1]["context_length"] == 40960
+    assert specs[1]["context_length"] == 131072
     assert specs[0]["speculative_draft_mtp"] is False
     assert specs[1]["speculative_draft_mtp"] is True
+    assert specs[1]["k_cache_quantization_type"] == "q8_0"
+    assert specs[1]["v_cache_quantization_type"] == "q8_0"
+    assert specs[1]["context_checkpoints"] == 4
+    rendered = "\x1f".join(str(specs[0][field]) for field in lm.BOOT_LOAD_FIELDS)
+    assert "\x1f\x1f" in rendered
 
 
 def test_boot_load_specs_follows_switch_var(registry):

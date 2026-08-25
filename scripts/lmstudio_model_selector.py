@@ -57,6 +57,55 @@ def profile_identifier(profile: dict) -> str:
     return profile.get("identifier") or profile["model_key"]
 
 
+def uses_advanced_loader(profile: dict) -> bool:
+    """Return whether a profile needs load controls absent from ``lms load``."""
+    return any(
+        profile.get(field) not in (None, "")
+        for field in (
+            "k_cache_quantization_type",
+            "v_cache_quantization_type",
+            "context_checkpoints",
+            "eval_batch_size",
+            "physical_batch_size",
+        )
+    )
+
+
+def sdk_loader_args(profile: dict, load_key: str) -> list[str]:
+    """Build the official SDK helper command for one advanced model profile."""
+    installed_loader = Path(__file__).resolve().with_name("lmstudio-sdk-loader.mjs")
+    source_loader = Path(__file__).resolve().with_name("lmstudio_sdk_loader.mjs")
+    default_loader = installed_loader if installed_loader.exists() else source_loader
+    loader = Path(os.environ.get("LMSTUDIO_SDK_LOADER", default_loader))
+    args = [
+        os.environ.get("NODE_BIN", "node"),
+        str(loader),
+        "--model", load_key,
+        "--identifier", profile_identifier(profile),
+        "--context-length", str(profile["context_length"]),
+        "--gpu", str(profile["gpu"]),
+        "--parallel", str(profile["parallel"]),
+        "--ttl", str(profile.get("ttl", 0)),
+    ]
+    optional = (
+        ("k_cache_quantization_type", "--k-cache"),
+        ("v_cache_quantization_type", "--v-cache"),
+        ("context_checkpoints", "--context-checkpoints"),
+        ("eval_batch_size", "--eval-batch-size"),
+        ("physical_batch_size", "--physical-batch-size"),
+    )
+    for field, option in optional:
+        if profile.get(field) not in (None, ""):
+            args.extend([option, str(profile[field])])
+    if profile.get("flash_attention", True):
+        args.append("--flash-attention")
+    if profile.get("offload_kv_cache_to_gpu", True):
+        args.append("--offload-kv-cache")
+    if profile.get("speculative_draft_mtp"):
+        args.append("--mtp")
+    return args
+
+
 def model_matches_profile(item: dict, profile: dict) -> bool:
     """Return whether an LM Studio catalog item matches a profile."""
     model_path = profile.get("model_path") or ""
@@ -138,6 +187,16 @@ def load_model(profile: dict, lms: Path) -> subprocess.CompletedProcess[str]:
                 except json.JSONDecodeError:
                     pass
                 time.sleep(0.5)
+    if uses_advanced_loader(profile):
+        LOGGER.info("Using LM Studio SDK loader for advanced cache settings: %s", target_identifier)
+        return subprocess.run(
+            sdk_loader_args(profile, load_key),
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
     args = [
         "load",
         "-c",
