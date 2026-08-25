@@ -55,7 +55,13 @@ default (non-interactive) install ships these fields ready to go:
 | Model | Role | Default |
 |---|---|---|
 | `vibethinker` (VibeThinker 1.5B) | editor autocomplete | **kept on** (`LMSTUDIO_USE_VIBETHINKER`) |
-| `qwen3.8-27b` (Qwen3.8-27B, Unsloth Dynamic 3.0 UD-Q4_K_XL) | agentic coding powerhouse, 40,960-token context | **main + startup** (`LMSTUDIO_USE_QWEN3_8_27B`, `LMSTUDIO_MAIN_MODEL`) |
+| `qwen3.8-27b` (Qwen3.8-27B, Unsloth Dynamic 3.0 UD-Q3_K_XL) | agentic coding powerhouse, 131,072-token context; Q8 KV cache + MTP | **main + startup** (`LMSTUDIO_USE_QWEN3_8_27B`, `LMSTUDIO_MAIN_MODEL`) |
+
+The 128K Qwen profile uses LM Studio's official JavaScript SDK because `lms
+load` does not expose KV-cache quantization or context-checkpoint controls. The
+installer deploys `lmstudio-sdk-loader.mjs`, and full root installs include
+Node.js. The helper locates the SDK bundled with LM Studio's standard plugins;
+its load transitions and failures are written to the service journal.
 
 At runtime the active main model is resolved by precedence: the first model whose
 `switch_env_var` is truthy, else `LMSTUDIO_MAIN_MODEL` when it names a model, else

@@ -39,7 +39,7 @@ install_lm_studio_app() {
   fi
 
   msg "Installing LM Studio (${version})"
-  apt_install curl unzip wget xdg-utils
+  apt_install curl unzip wget xdg-utils nodejs
   local tmpdir
   tmpdir="$(mktemp -d)"
   local url_arch="x64"
@@ -154,12 +154,22 @@ lmla_install_assets() {
   for asset in defaults.sh defaults.py; do
     run_as_target install -D -m 0644 "$LMLA_CONFIG_DIR/$asset" "$config_dir/$asset"
   done
-  if [ ! -f "$catalog_dst" ]; then
+  if [ -f "$catalog_dst" ]; then
+    local upgraded_catalog
+    upgraded_catalog="$(mktemp)"
+    rm -f "$upgraded_catalog"
+    run_as_target python3 "$LMLA_DIR/scripts/lmstudio_models.py" \
+      upgrade-catalog --catalog "$catalog_dst" --shipped-catalog "$LMLA_CONFIG_DIR/model-profiles.json" \
+      | run_as_target tee "$upgraded_catalog" >/dev/null
+    run_as_target install -D -m 0644 "$upgraded_catalog" "$catalog_dst"
+    run_as_target rm -f "$upgraded_catalog"
+  else
     run_as_target install -D -m 0644 "$LMLA_CONFIG_DIR/model-profiles.json" "$catalog_dst"
   fi
   run_as_target install -D -m 0644 "$LMLA_DIR/scripts/lmla_logging_utils.py" "$bin_dir/lmla_logging_utils.py"
   run_as_target install -D -m 0755 "$LMLA_DIR/scripts/lmstudio_models.py" "$bin_dir/lmstudio-models"
   run_as_target install -D -m 0755 "$LMLA_DIR/scripts/lmstudio_model_selector.py" "$bin_dir/lmstudio-model"
+  run_as_target install -D -m 0755 "$LMLA_DIR/scripts/lmstudio_sdk_loader.mjs" "$bin_dir/lmstudio-sdk-loader.mjs"
   run_as_target install -D -m 0755 "$LMLA_CONFIG_DIR/lmstudio-boot.sh" "$bin_dir/lmstudio-boot.sh"
 }
 
@@ -639,7 +649,8 @@ uninstall_models() {
   else
     run_as_target rm -f \
       "$bin_dir/lmstudio-models" "$bin_dir/lmstudio-model" \
-      "$bin_dir/lmstudio-boot.sh" "$bin_dir/lmla_logging_utils.py"
+      "$bin_dir/lmstudio-boot.sh" "$bin_dir/lmla_logging_utils.py" \
+      "$bin_dir/lmstudio-sdk-loader.mjs"
   fi
 
   # Clear model registry so queries return empty

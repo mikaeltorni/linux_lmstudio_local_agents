@@ -11,6 +11,8 @@ set -euo pipefail
 CONFIG_HOME="${HOME}/.config/lmstudio-local-agents"
 CATALOG="${LMSTUDIO_MODEL_CATALOG:-$CONFIG_HOME/configs/lmstudio/model-profiles.json}"
 MODELS_PY="${LMSTUDIO_MODELS_PY:-$HOME/.local/bin/lmstudio-models}"
+SDK_LOADER="${LMSTUDIO_SDK_LOADER:-$HOME/.local/bin/lmstudio-sdk-loader.mjs}"
+NODE_BIN="${NODE_BIN:-node}"
 
 # Canonical serving defaults (fallbacks when serve.env is absent). Sourced before
 # PATH is built so LMSTUDIO_BIN_DIR (the single source of truth for the lms CLI
@@ -119,7 +121,7 @@ for _ in 1 2 3 4 5; do start_lmstudio_server && break; sleep 3; done
 
 # Load each model the resolver selected (keep-on models, then the active main).
 if [ -x "$MODELS_PY" ] || command -v python3 >/dev/null 2>&1; then
-  while IFS=$'\t' read -r model_key context gpu parallel ttl identifier speculative_draft_mtp; do
+  while IFS=$'\x1f' read -r model_key context gpu parallel ttl identifier speculative_draft_mtp k_cache v_cache context_checkpoints eval_batch physical_batch flash_attention offload_kv_cache; do
     [ -n "$model_key" ] || continue
     if ! model_key_exists "$model_key" && ! model_key_exists "${model_key##*/}"; then
       echo "[boot] model not found locally, skipping: $model_key" >&2
@@ -143,6 +145,21 @@ if [ -x "$MODELS_PY" ] || command -v python3 >/dev/null 2>&1; then
     case "${speculative_draft_mtp:-false}" in
       1|true|TRUE|yes|YES|on|ON) speculative_args=(--speculative-draft-mtp) ;;
     esac
+    if [ -n "${k_cache:-}${v_cache:-}${context_checkpoints:-}${eval_batch:-}${physical_batch:-}" ]; then
+      advanced_args=("$NODE_BIN" "$SDK_LOADER"
+        --model "$load_key" --identifier "$identifier"
+        --context-length "$context" --gpu "$gpu" --parallel "$parallel" --ttl "${ttl:-0}")
+      [ -z "${k_cache:-}" ] || advanced_args+=(--k-cache "$k_cache")
+      [ -z "${v_cache:-}" ] || advanced_args+=(--v-cache "$v_cache")
+      [ -z "${context_checkpoints:-}" ] || advanced_args+=(--context-checkpoints "$context_checkpoints")
+      [ -z "${eval_batch:-}" ] || advanced_args+=(--eval-batch-size "$eval_batch")
+      [ -z "${physical_batch:-}" ] || advanced_args+=(--physical-batch-size "$physical_batch")
+      case "${flash_attention:-true}" in 1|true|TRUE|yes|YES|on|ON) advanced_args+=(--flash-attention) ;; esac
+      case "${offload_kv_cache:-true}" in 1|true|TRUE|yes|YES|on|ON) advanced_args+=(--offload-kv-cache) ;; esac
+      case "${speculative_draft_mtp:-false}" in 1|true|TRUE|yes|YES|on|ON) advanced_args+=(--mtp) ;; esac
+      "${advanced_args[@]}" || echo "[boot] failed to load $model_key with advanced SDK settings" >&2
+      continue
+    fi
     # shellcheck disable=SC2086
     "$LMS_CLI" load -c "$context" --gpu "$gpu" --parallel "$parallel" \
       --identifier "$identifier" "${ttl_args[@]}" "${speculative_args[@]}" "$load_key" -y || \

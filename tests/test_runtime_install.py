@@ -162,3 +162,9 @@ def test_default_app_version_tracks_current_stable_linux_release():
     source = LIBRARY.read_text(encoding="utf-8")
 
     assert 'LM_STUDIO_VERSION:-0.4.21-2' in source
+
+
+def test_app_install_provides_node_for_advanced_model_loading():
+    """Clean full installs include Node for the official LM Studio SDK loader."""
+    source = LIBRARY.read_text(encoding="utf-8")
+    assert "apt_install curl unzip wget xdg-utils nodejs" in source

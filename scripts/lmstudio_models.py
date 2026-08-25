@@ -24,6 +24,7 @@ Usage (CLI, consumed by the boot script):
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
 import re
@@ -73,6 +74,43 @@ def load_registry(path: str | Path) -> dict:
 def profiles(registry: dict) -> list[dict]:
     """Return the registry's profile list."""
     return list(registry.get("profiles", []))
+
+
+def upgrade_catalog(installed: dict, shipped: dict) -> dict:
+    """Upgrade shipped profiles while preserving user model-selection choices.
+
+    Args:
+        installed: The user's current, possibly customized catalog.
+        shipped: The repository catalog containing the newest built-in profiles.
+
+    Returns:
+        dict: An upgraded catalog. Unknown/custom profiles are retained, while
+        built-in model artifacts and serving flags come from ``shipped``.
+    """
+    if int(installed.get("schema_version") or 0) >= int(shipped.get("schema_version") or 0):
+        return copy.deepcopy(installed)
+
+    result = copy.deepcopy(shipped)
+    installed_by_id = {profile.get("id"): profile for profile in profiles(installed)}
+    choice_fields = (
+        "switch_env_var", "default_install", "default_keep_on", "default_main",
+        "default_startup", "group",
+    )
+    for profile in result["profiles"]:
+        previous = installed_by_id.get(profile.get("id"))
+        if previous is None:
+            continue
+        for field in choice_fields:
+            if field in previous:
+                profile[field] = previous[field]
+
+    shipped_ids = {profile.get("id") for profile in profiles(shipped)}
+    result["profiles"].extend(
+        copy.deepcopy(profile)
+        for profile in profiles(installed)
+        if profile.get("id") not in shipped_ids
+    )
+    return result
 
 
 def main_env_var(registry: dict) -> str:
@@ -264,8 +302,12 @@ def resolve_active_main(registry: dict, plan: ModelPlan, env: dict[str, str] | N
 #: Fields a boot loader needs to run ``lms load`` for one model, in order.
 BOOT_LOAD_FIELDS = (
     "model_key", "context_length", "gpu", "parallel", "ttl", "identifier",
-    "speculative_draft_mtp",
+    "speculative_draft_mtp", "k_cache_quantization_type",
+    "v_cache_quantization_type", "context_checkpoints", "eval_batch_size",
+    "physical_batch_size", "flash_attention", "offload_kv_cache_to_gpu",
 )
+# Preserve intentionally empty advanced fields when Bash reads the records.
+BOOT_LOAD_FIELD_SEPARATOR = "\x1f"
 
 
 def boot_load_specs(registry: dict, plan: ModelPlan, env: dict[str, str] | None = None) -> list[dict]:
@@ -313,6 +355,13 @@ def boot_load_specs(registry: dict, plan: ModelPlan, env: dict[str, str] | None 
             "ttl": profile.get("ttl", 0),
             "identifier": profile.get("identifier") or profile["model_key"],
             "speculative_draft_mtp": bool(profile.get("speculative_draft_mtp", False)),
+            "k_cache_quantization_type": profile.get("k_cache_quantization_type", ""),
+            "v_cache_quantization_type": profile.get("v_cache_quantization_type", ""),
+            "context_checkpoints": profile.get("context_checkpoints", ""),
+            "eval_batch_size": profile.get("eval_batch_size", ""),
+            "physical_batch_size": profile.get("physical_batch_size", ""),
+            "flash_attention": bool(profile.get("flash_attention", True)),
+            "offload_kv_cache_to_gpu": bool(profile.get("offload_kv_cache_to_gpu", True)),
         })
 
     for profile in active_profiles:
@@ -661,9 +710,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="LM Studio local-agent model resolution.")
     parser.add_argument(
         "command",
-        choices=["active-main", "keep-on", "boot-load", "download-list", "default-plan", "apply-selection", "custom-selection", "profile-from-source"],
+        choices=["active-main", "keep-on", "boot-load", "download-list", "default-plan", "apply-selection", "custom-selection", "profile-from-source", "upgrade-catalog"],
     )
     parser.add_argument("--catalog", type=Path, required=True)
+    parser.add_argument("--shipped-catalog", type=Path, help="upgrade-catalog: newest built-in registry.")
     parser.add_argument(
         "--selection",
         type=Path,
@@ -686,6 +736,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     registry = load_registry(args.catalog)
+    if args.command == "upgrade-catalog":
+        if args.shipped_catalog is None:
+            parser.error("upgrade-catalog requires --shipped-catalog")
+        print(json.dumps(upgrade_catalog(registry, load_registry(args.shipped_catalog)), indent=2))
+        return 0
     if args.command == "profile-from-source":
         print(json.dumps(custom_profile_from_source(args.source), indent=2))
         return 0
@@ -721,7 +776,7 @@ def main(argv: list[str] | None = None) -> int:
             print(key)
     elif args.command == "boot-load":
         for spec in boot_load_specs(registry, plan):
-            print("\t".join(str(spec[field]) for field in BOOT_LOAD_FIELDS))
+            print(BOOT_LOAD_FIELD_SEPARATOR.join(str(spec[field]) for field in BOOT_LOAD_FIELDS))
     elif args.command == "download-list":
         selected = _parse_selection(os.environ.get("LMSTUDIO_INSTALL_MODELS"))
         for spec in download_specs(registry, selected):
