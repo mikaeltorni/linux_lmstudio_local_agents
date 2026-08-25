@@ -219,7 +219,7 @@ def test_upgrade_catalog_refreshes_builtin_profile_and_preserves_choices(registr
     upgraded = lm.upgrade_catalog(installed, registry)
 
     upgraded_qwen = lm.find_profile(upgraded, "qwen3.8-27b")
-    assert upgraded["schema_version"] == 4
+    assert upgraded["schema_version"] == 5
     assert upgraded_qwen["model_path"].endswith("UD-Q3_K_XL.gguf")
     assert upgraded_qwen["context_length"] == 131072
     assert upgraded_qwen["switch_env_var"] == "MY_QWEN_SWITCH"
