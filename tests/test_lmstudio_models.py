@@ -189,6 +189,17 @@ def test_cli_active_main_and_keep_on(registry, capsys):
     assert capsys.readouterr().out.strip() == "vibethinker-1.5b"
 
 
+def test_cli_boot_load_serializes_booleans_for_shell_cases(capsys):
+    """Boot records use lowercase booleans accepted by the shell loader."""
+    assert lm.main(["boot-load", "--catalog", str(CATALOG)]) == 0
+    records = capsys.readouterr().out.strip().splitlines()
+    qwen = records[-1].split(lm.BOOT_LOAD_FIELD_SEPARATOR)
+    values = dict(zip(lm.BOOT_LOAD_FIELDS, qwen, strict=True))
+    assert values["speculative_draft_mtp"] == "true"
+    assert values["flash_attention"] == "true"
+    assert values["offload_kv_cache_to_gpu"] == "true"
+
+
 def test_cli_default_plan_json(capsys):
     """The default-plan subcommand emits valid JSON describing the plan."""
     assert lm.main(["default-plan", "--catalog", str(CATALOG)]) == 0

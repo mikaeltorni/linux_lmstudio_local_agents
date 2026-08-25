@@ -310,6 +310,13 @@ BOOT_LOAD_FIELDS = (
 BOOT_LOAD_FIELD_SEPARATOR = "\x1f"
 
 
+def boot_load_value(value: object) -> str:
+    """Serialize one boot field without Python's shell-hostile title-case bools."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
 def boot_load_specs(registry: dict, plan: ModelPlan, env: dict[str, str] | None = None) -> list[dict]:
     """Return the models the boot service should load, in load order.
 
@@ -778,7 +785,7 @@ def main(argv: list[str] | None = None) -> int:
             print(key)
     elif args.command == "boot-load":
         for spec in boot_load_specs(registry, plan):
-            print(BOOT_LOAD_FIELD_SEPARATOR.join(str(spec[field]) for field in BOOT_LOAD_FIELDS))
+            print(BOOT_LOAD_FIELD_SEPARATOR.join(boot_load_value(spec[field]) for field in BOOT_LOAD_FIELDS))
     elif args.command == "download-list":
         selected = _parse_selection(os.environ.get("LMSTUDIO_INSTALL_MODELS"))
         for spec in download_specs(registry, selected):
