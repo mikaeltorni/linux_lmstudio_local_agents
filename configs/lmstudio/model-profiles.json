@@ -1,5 +1,5 @@
 {
-  "schema_version": 5,
+  "schema_version": 6,
   "main_env_var": "LMSTUDIO_MAIN_MODEL",
   "documentation": {
     "lms_load": "https://lmstudio.ai/docs/cli/models (lms load)",
@@ -52,14 +52,14 @@
     {
       "id": "qwen3.8-27b",
       "command": "qwen3.8-27b",
-      "description": "Qwen3.8-27B (Unsloth Dynamic 3.0 UD-Q3_K_XL) — 128K agentic coding powerhouse",
+      "description": "Qwen3.8-27B (Unsloth Dynamic 3.0 UD-Q2_K_XL) — 128K on-demand agentic coder",
       "boot_preload": true,
       "model_key": "qwen3.8-27b",
-      "load_key": "qwen3.8-27b@q3_k_xl",
-      "download_url": "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/4ca720788d1e01f1bff70c033e0d0028fd02e502/Qwen3.8-27B-UD-Q3_K_XL.gguf?download=true",
-      "model_path": "unsloth/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-Q3_K_XL.gguf",
-      "sha256": "8c2a45ff85e7674ca185ec8eb6cdeab0e617ed9d8018caed0b64380eb2a67a5e",
-      "size_bytes": 13146393504,
+      "load_key": "qwen3.8-27b@q2_k_xl",
+      "download_url": "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/4ca720788d1e01f1bff70c033e0d0028fd02e502/Qwen3.8-27B-UD-Q2_K_XL.gguf?download=true",
+      "model_path": "unsloth/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-Q2_K_XL.gguf",
+      "sha256": "fd4730dd8aad070517978752b63d530aeb1740d2283cab9fa24f1e404032ddb0",
+      "size_bytes": 9828981664,
       "gpu": "max",
       "context_length": 131072,
       "parallel": 1,
@@ -70,15 +70,15 @@
       "eval_batch_size": 2048,
       "physical_batch_size": 512,
       "flash_attention": true,
-      "offload_kv_cache_to_gpu": true,
-      "ttl": 0,
+      "offload_kv_cache_to_gpu": false,
+      "ttl": 900,
       "identifier": "qwen3.8-27b",
       "yes": true,
       "switch_env_var": "LMSTUDIO_USE_QWEN3_8_27B",
       "default_install": true,
       "default_keep_on": false,
       "default_main": true,
-      "default_startup": true
+      "default_startup": false
     }
   ]
 }
