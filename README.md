@@ -69,6 +69,9 @@ an Agent Command Center Qwen session starts. Its Q8 KV cache stays in system
 RAM, and LM Studio unloads the model after 15 idle minutes. This preserves the
 full 131,072-token window without reserving nearly all GPU memory at desktop
 startup.
+Schema-5 catalogs are migrated to this startup-off policy once so upgrades do
+not silently retain the former GPU-saturating autostart. Explicit startup
+choices made under schema 6 or later remain preserved by subsequent upgrades.
 
 At runtime the active main model is resolved by precedence: the first model whose
 `switch_env_var` is truthy, else `LMSTUDIO_MAIN_MODEL` when it names a model, else

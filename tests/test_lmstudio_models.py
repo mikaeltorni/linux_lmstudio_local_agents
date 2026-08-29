@@ -209,16 +209,16 @@ def test_cli_default_plan_json(capsys):
     assert payload["keep_on_ids"] == ["vibethinker"]
 
 
-def test_upgrade_catalog_refreshes_builtin_profile_and_preserves_choices(registry):
-    """Schema upgrades replace shipped model data without losing user choices."""
+def test_upgrade_catalog_applies_new_startup_policy_and_preserves_other_choices(registry):
+    """A new safety policy resets legacy startup while preserving other choices."""
     installed = copy.deepcopy(registry)
-    installed["schema_version"] = 3
+    installed["schema_version"] = 5
     qwen = lm.find_profile(installed, "qwen3.8-27b")
     qwen.update({
         "model_path": "unsloth/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-Q4_K_XL.gguf",
         "context_length": 40960,
         "switch_env_var": "MY_QWEN_SWITCH",
-        "default_startup": False,
+        "default_startup": True,
         "group": 7,
     })
     custom = lm.normalize_custom_profile({
@@ -238,6 +238,19 @@ def test_upgrade_catalog_refreshes_builtin_profile_and_preserves_choices(registr
     assert upgraded_qwen["default_startup"] is False
     assert upgraded_qwen["group"] == 7
     assert lm.find_profile(upgraded, custom["id"])["custom"] is True
+
+
+def test_upgrade_catalog_preserves_startup_choice_after_policy_schema(registry):
+    """Later schema upgrades preserve startup choices made under the safe policy."""
+    installed = copy.deepcopy(registry)
+    installed["profiles"][1]["default_startup"] = True
+    shipped = copy.deepcopy(registry)
+    shipped["schema_version"] = 7
+
+    upgraded = lm.upgrade_catalog(installed, shipped)
+
+    assert upgraded["schema_version"] == 7
+    assert lm.find_profile(upgraded, "qwen3.8-27b")["default_startup"] is True
 
 
 def test_boot_load_specs_default_order(registry):
