@@ -1,5 +1,5 @@
 {
-  "schema_version": 6,
+  "schema_version": 7,
   "main_env_var": "LMSTUDIO_MAIN_MODEL",
   "documentation": {
     "lms_load": "https://lmstudio.ai/docs/cli/models (lms load)",
@@ -23,7 +23,8 @@
     "default_install": "Selected for installation in the default (non-interactive) install.",
     "default_keep_on": "Kept loaded at all times (not part of the switchable main slot).",
     "default_main": "The default active main model and the target of LMSTUDIO_MAIN_MODEL.",
-    "default_startup": "Autoloaded into memory at boot. When omitted, falls back to default_keep_on || default_main. Set false to ship a model installed-but-idle while keeping it runtime-switchable via its switch_env_var."
+    "default_startup": "Autoloaded into memory at boot. When omitted, falls back to default_keep_on || default_main. Set false to ship a model installed-but-idle while keeping it runtime-switchable via its switch_env_var.",
+    "startup_policy_schema": "Optional schema that introduced a safety-sensitive startup default. Older installed catalogs adopt the shipped default_startup once; choices made at or after this schema remain preserved."
   },
   "profiles": [
     {
@@ -78,7 +79,8 @@
       "default_install": true,
       "default_keep_on": false,
       "default_main": true,
-      "default_startup": false
+      "default_startup": false,
+      "startup_policy_schema": 7
     }
   ]
 }

@@ -79,6 +79,11 @@ def profiles(registry: dict) -> list[dict]:
 def upgrade_catalog(installed: dict, shipped: dict) -> dict:
     """Upgrade shipped profiles while preserving user model-selection choices.
 
+    A profile may declare ``startup_policy_schema`` when a schema introduces a
+    safety-sensitive startup default. Catalogs older than that schema adopt the
+    shipped ``default_startup`` once; choices made at or after the policy schema
+    continue to survive later upgrades.
+
     Args:
         installed: The user's current, possibly customized catalog.
         shipped: The repository catalog containing the newest built-in profiles.
@@ -87,7 +92,8 @@ def upgrade_catalog(installed: dict, shipped: dict) -> dict:
         dict: An upgraded catalog. Unknown/custom profiles are retained, while
         built-in model artifacts and serving flags come from ``shipped``.
     """
-    if int(installed.get("schema_version") or 0) >= int(shipped.get("schema_version") or 0):
+    installed_schema = int(installed.get("schema_version") or 0)
+    if installed_schema >= int(shipped.get("schema_version") or 0):
         return copy.deepcopy(installed)
 
     result = copy.deepcopy(shipped)
@@ -100,7 +106,10 @@ def upgrade_catalog(installed: dict, shipped: dict) -> dict:
         previous = installed_by_id.get(profile.get("id"))
         if previous is None:
             continue
+        startup_policy_schema = int(profile.get("startup_policy_schema") or 0)
         for field in choice_fields:
+            if field == "default_startup" and installed_schema < startup_policy_schema:
+                continue
             if field in previous:
                 profile[field] = previous[field]
 
