@@ -189,15 +189,16 @@ def test_cli_active_main_and_keep_on(registry, capsys):
     assert capsys.readouterr().out.strip() == "vibethinker-1.5b"
 
 
-def test_cli_boot_load_serializes_booleans_for_shell_cases(capsys):
-    """Boot records use lowercase booleans accepted by the shell loader."""
+def test_cli_boot_load_serializes_booleans_for_shell_cases(capsys, monkeypatch):
+    """On-demand Qwen records use lowercase booleans accepted by the shell loader."""
+    monkeypatch.setenv("LMSTUDIO_USE_QWEN3_8_27B", "1")
     assert lm.main(["boot-load", "--catalog", str(CATALOG)]) == 0
     records = capsys.readouterr().out.strip().splitlines()
     qwen = records[-1].split(lm.BOOT_LOAD_FIELD_SEPARATOR)
     values = dict(zip(lm.BOOT_LOAD_FIELDS, qwen, strict=True))
     assert values["speculative_draft_mtp"] == "true"
     assert values["flash_attention"] == "true"
-    assert values["offload_kv_cache_to_gpu"] == "true"
+    assert values["offload_kv_cache_to_gpu"] == "false"
 
 
 def test_cli_default_plan_json(capsys):
@@ -230,8 +231,8 @@ def test_upgrade_catalog_refreshes_builtin_profile_and_preserves_choices(registr
     upgraded = lm.upgrade_catalog(installed, registry)
 
     upgraded_qwen = lm.find_profile(upgraded, "qwen3.8-27b")
-    assert upgraded["schema_version"] == 5
-    assert upgraded_qwen["model_path"].endswith("UD-Q3_K_XL.gguf")
+    assert upgraded["schema_version"] == 6
+    assert upgraded_qwen["model_path"].endswith("UD-Q2_K_XL.gguf")
     assert upgraded_qwen["context_length"] == 131072
     assert upgraded_qwen["switch_env_var"] == "MY_QWEN_SWITCH"
     assert upgraded_qwen["default_startup"] is False
@@ -240,23 +241,15 @@ def test_upgrade_catalog_refreshes_builtin_profile_and_preserves_choices(registr
 
 
 def test_boot_load_specs_default_order(registry):
-    """The CPU autocomplete model loads first, followed by the Qwen main model."""
+    """The CPU autocomplete model loads at boot while Qwen stays on demand."""
     plan = lm.default_plan(registry)
     specs = lm.boot_load_specs(registry, plan, env={})
     keys = [spec["model_key"] for spec in specs]
-    assert keys == ["vibethinker-1.5b", "qwen3.8-27b"]
+    assert keys == ["vibethinker-1.5b"]
     # Each spec carries the lms load flags.
     assert set(lm.BOOT_LOAD_FIELDS).issubset(specs[0].keys())
     assert specs[0]["gpu"] == "off"
-    assert specs[1]["gpu"] == "max"
-    assert specs[1]["context_length"] == 131072
-    assert specs[1]["load_key"] == "qwen3.8-27b@q3_k_xl"
-    assert specs[1]["model_path"].endswith("Qwen3.8-27B-UD-Q3_K_XL.gguf")
     assert specs[0]["speculative_draft_mtp"] is False
-    assert specs[1]["speculative_draft_mtp"] is True
-    assert specs[1]["k_cache_quantization_type"] == "q8_0"
-    assert specs[1]["v_cache_quantization_type"] == "q8_0"
-    assert specs[1]["context_checkpoints"] == 4
     rendered = "\x1f".join(str(specs[0][field]) for field in lm.BOOT_LOAD_FIELDS)
     assert "\x1f\x1f" in rendered
 
@@ -266,6 +259,16 @@ def test_boot_load_specs_follows_switch_var(registry):
     plan = lm.default_plan(registry)
     specs = lm.boot_load_specs(registry, plan, env={"LMSTUDIO_USE_QWEN3_8_27B": "1"})
     assert [spec["model_key"] for spec in specs] == ["vibethinker-1.5b", "qwen3.8-27b"]
+    assert specs[1]["gpu"] == "max"
+    assert specs[1]["context_length"] == 131072
+    assert specs[1]["load_key"] == "qwen3.8-27b@q2_k_xl"
+    assert specs[1]["model_path"].endswith("Qwen3.8-27B-UD-Q2_K_XL.gguf")
+    assert specs[1]["ttl"] == 900
+    assert specs[1]["speculative_draft_mtp"] is True
+    assert specs[1]["k_cache_quantization_type"] == "q8_0"
+    assert specs[1]["v_cache_quantization_type"] == "q8_0"
+    assert specs[1]["context_checkpoints"] == 4
+    assert specs[1]["offload_kv_cache_to_gpu"] is False
 
 
 def test_boot_load_specs_no_duplicate_when_main_is_keep_on(registry):

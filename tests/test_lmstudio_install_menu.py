@@ -56,11 +56,11 @@ def _silent_writer(_text):
 
 
 def test_initial_state_matches_shipped_defaults(profiles):
-    """The shipped VibeThinker and Qwen3.8-27B profiles both start automatically."""
+    """Qwen is installed on demand while the small VibeThinker starts automatically."""
     state = menu.SelectionState(profiles)
     sel = state.selection()
     assert set(sel["selected_ids"]) == {"vibethinker", "qwen3.8-27b"}
-    assert set(sel["autostart_ids"]) == {"vibethinker", "qwen3.8-27b"}
+    assert set(sel["autostart_ids"]) == {"vibethinker"}
     rendered = menu.render(state)
     assert "LMSTUDIO_USE_VIBETHINKER" in rendered
     assert "LMSTUDIO_USE_QWEN3_8_27B" in rendered
@@ -69,7 +69,7 @@ def test_initial_state_matches_shipped_defaults(profiles):
 def test_toggle_install_clears_autostart(profiles):
     """Deselecting a model also removes it from autostart."""
     state = menu.SelectionState(profiles)
-    state.toggle_install(2)  # Qwen3.8-27B (installed + autostart) -> off
+    state.toggle_install(2)  # Qwen3.8-27B (installed, startup-off) -> off
     sel = state.selection()
     assert "qwen3.8-27b" not in sel["selected_ids"]
     assert "qwen3.8-27b" not in sel["autostart_ids"]
