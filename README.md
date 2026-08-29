@@ -55,7 +55,7 @@ default (non-interactive) install ships these fields ready to go:
 | Model | Role | Default |
 |---|---|---|
 | `vibethinker` (VibeThinker 1.5B) | optional legacy editor autocomplete | **not installed, startup off** (`LMSTUDIO_USE_VIBETHINKER`) |
-| `qwen3.8-27b` (Qwen3.8-27B, Unsloth Dynamic 3.0 UD-Q2_K_XL) | on-demand agentic coder, 131,072-token context; Q8 RAM KV cache + MTP | **main, startup off** (`LMSTUDIO_USE_QWEN3_8_27B`, `LMSTUDIO_MAIN_MODEL`) |
+| `qwen3.8-27b` (Qwen3.8-27B, Unsloth Dynamic 3.0 UD-Q3_K_XL) | on-demand agentic coder, 131,072-token context; Q8 RAM KV cache + MTP | **main, startup off** (`LMSTUDIO_USE_QWEN3_8_27B`, `LMSTUDIO_MAIN_MODEL`) |
 
 The 128K Qwen profile uses LM Studio's official JavaScript SDK because `lms
 load` does not expose KV-cache quantization or context-checkpoint controls. The
@@ -63,7 +63,7 @@ installer deploys `lmstudio-sdk-loader.mjs`, and full root installs include
 Node.js. The helper locates the SDK bundled with LM Studio's standard plugins;
 its load transitions and failures are written to the service journal.
 The public API identifier remains `qwen3.8-27b`; an internal quant-specific
-`load_key` selects Q2_K_XL deterministically when multiple local variants
+`load_key` selects Q3_K_XL deterministically when multiple local variants
 exist. Qwen remains installed and is loaded by `lmstudio-model --restore` when
 an Agent Command Center Qwen session starts. Its Q8 KV cache stays in system
 RAM, and LM Studio unloads the model after 15 idle minutes. This preserves the
