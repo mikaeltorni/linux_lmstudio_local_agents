@@ -1,5 +1,5 @@
 {
-  "schema_version": 7,
+  "schema_version": 8,
   "main_env_var": "LMSTUDIO_MAIN_MODEL",
   "documentation": {
     "lms_load": "https://lmstudio.ai/docs/cli/models (lms load)",
@@ -30,7 +30,7 @@
     {
       "id": "vibethinker",
       "command": "vibethinker",
-      "description": "VibeThinker 1.5B (Q4_K_M) — CPU-resident editor autocomplete",
+      "description": "VibeThinker 1.5B (Q4_K_M) — optional legacy editor autocomplete",
       "boot_preload": false,
       "model_key": "vibethinker-1.5b",
       "download_url": "https://huggingface.co/mradermacher/VibeThinker-1.5B-GGUF/resolve/main/VibeThinker-1.5B.Q4_K_M.gguf?download=true",
@@ -45,10 +45,10 @@
       "identifier": "",
       "yes": true,
       "switch_env_var": "LMSTUDIO_USE_VIBETHINKER",
-      "default_install": true,
-      "default_keep_on": true,
+      "default_install": false,
+      "default_keep_on": false,
       "default_main": false,
-      "default_startup": true
+      "default_startup": false
     },
     {
       "id": "qwen3.8-27b",

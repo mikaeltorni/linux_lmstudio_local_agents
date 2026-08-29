@@ -2,8 +2,8 @@
 """Tests for persistent catalog-driven LM Studio model selection.
 
 Ported from agent_command_center, where this logic used to live, and extended for
-the keep-on aware switcher: switching the main slot must not unload keep-on
-models (the CPU-resident VibeThinker).
+the keep-on aware switcher. VibeThinker remains available as an optional profile
+without being installed or loaded by default.
 """
 
 from __future__ import annotations
@@ -68,7 +68,9 @@ def test_catalog_contains_expected_model_commands():
     assert qwen["ttl"] == 900
     assert profiles["qwen3.8-27b"]["default_startup"] is False
     assert profiles["vibethinker"]["model_key"] == "vibethinker-1.5b"
-    assert profiles["vibethinker"]["default_keep_on"] is True
+    assert profiles["vibethinker"]["default_install"] is False
+    assert profiles["vibethinker"]["default_keep_on"] is False
+    assert profiles["vibethinker"]["default_startup"] is False
 
 
 def test_restore_uses_persisted_profile_then_boot_default():
@@ -81,16 +83,17 @@ def test_restore_uses_persisted_profile_then_boot_default():
         assert MOD.selected_profile(profiles, None, state_file)["id"] == "qwen3.8-27b"
 
 
-def test_switchable_profiles_excludes_keep_on():
-    """The switchable set excludes keep-on models (the VibeThinker model)."""
+def test_switchable_profiles_includes_optional_non_keep_on_profile():
+    """An explicitly installed optional VibeThinker can still be switched to."""
     profiles = MOD.load_profiles(CATALOG)
     ids = {profile["id"] for profile in MOD.switchable_profiles(profiles)}
-    assert ids == {"qwen3.8-27b"}
+    assert ids == {"vibethinker", "qwen3.8-27b"}
 
 
 def test_switch_model_does_not_unload_keep_on(monkeypatch):
-    """Switching the main slot never unloads the keep-on VibeThinker."""
+    """Switching the main slot never unloads a profile explicitly marked keep-on."""
     profiles = MOD.load_profiles(CATALOG)
+    _profile(profiles, "vibethinker")["default_keep_on"] = True
     unloaded = []
 
     def fake_run(_lms, *args, check=True):

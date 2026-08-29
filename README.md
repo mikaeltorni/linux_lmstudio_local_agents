@@ -36,8 +36,8 @@ carries three install-time fields:
 - **`switch_env_var`** — a per-model environment variable. Set it truthy and the
   active served model switches to that model (e.g. `LMSTUDIO_USE_QWEN3_8_27B=1`).
 - **`default_keep_on`** — the model is always kept loaded (it is not part of the
-  switchable "main" slot). The small CPU-resident VibeThinker model is kept on by
-  default so editor autocomplete is always available.
+  switchable "main" slot). Optional profiles can remain in the catalog without
+  being installed or resident by default.
 - **`default_main`** — the model the top-level `main_env_var`
   (`LMSTUDIO_MAIN_MODEL`) resolves to, and the default active model when no
   per-model switch variable is set.
@@ -54,7 +54,7 @@ default (non-interactive) install ships these fields ready to go:
 
 | Model | Role | Default |
 |---|---|---|
-| `vibethinker` (VibeThinker 1.5B) | editor autocomplete | **kept on** (`LMSTUDIO_USE_VIBETHINKER`) |
+| `vibethinker` (VibeThinker 1.5B) | optional legacy editor autocomplete | **not installed, startup off** (`LMSTUDIO_USE_VIBETHINKER`) |
 | `qwen3.8-27b` (Qwen3.8-27B, Unsloth Dynamic 3.0 UD-Q2_K_XL) | on-demand agentic coder, 131,072-token context; Q8 RAM KV cache + MTP | **main, startup off** (`LMSTUDIO_USE_QWEN3_8_27B`, `LMSTUDIO_MAIN_MODEL`) |
 
 The 128K Qwen profile uses LM Studio's official JavaScript SDK because `lms
@@ -69,6 +69,9 @@ an Agent Command Center Qwen session starts. Its Q8 KV cache stays in system
 RAM, and LM Studio unloads the model after 15 idle minutes. This preserves the
 full 131,072-token window without reserving nearly all GPU memory at desktop
 startup.
+VibeThinker remains selectable for an explicit legacy Continue setup, but is no
+longer downloaded, kept resident, or loaded at boot by the shipped defaults;
+Cursor Autotab is the default editor completion path.
 Schema-5 catalogs are migrated to this startup-off policy once so upgrades do
 not silently retain the former GPU-saturating autostart. Explicit startup
 choices made under schema 7 or later remain preserved by subsequent upgrades.

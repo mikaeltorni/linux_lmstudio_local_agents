@@ -107,10 +107,10 @@ def test_consumer_selection_writes_customized_catalog(tmp_path):
     assert set(installed) == {"vibethinker", "qwen3.8-27b"}
     main = [p["id"] for p in catalog["profiles"] if p["default_main"]]
     assert main == ["qwen3.8-27b"]
-    # Switch command exists for Qwen3.8-27B; keep-on vibethinker has no switch command.
+    # Both explicitly selected, non-keep-on models receive switch commands.
     bin_dir = tmp_path / ".local/bin"
     assert (bin_dir / "qwen3.8-27b").exists()
-    assert not (bin_dir / "vibethinker").exists()
+    assert (bin_dir / "vibethinker").exists()
     # Core tools are installed regardless.
     assert (bin_dir / "lmstudio-models").exists()
     assert (bin_dir / "lmstudio-model").exists()
@@ -266,12 +266,12 @@ def test_download_scripts_route_catalog_sources_through_lms_get():
 
 
 def test_default_path_installs_full_catalog(tmp_path):
-    """With no selection signal, the shipped default catalog (all models) is used."""
+    """With no selection signal, only the shipped on-demand Qwen default is used."""
     proc = _run(tmp_path, "", call="install_models")
     assert proc.returncode == 0, proc.stderr
     catalog = _catalog(tmp_path)
     installed = {p["id"] for p in catalog["profiles"] if p["default_install"]}
-    assert installed == {"vibethinker", "qwen3.8-27b"}
+    assert installed == {"qwen3.8-27b"}
 
 
 def test_downloads_run_in_background_not_inline(tmp_path):
