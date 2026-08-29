@@ -123,6 +123,27 @@ def model_matches_profile(item: dict, profile: dict) -> bool:
     return False
 
 
+def loaded_model_matches_profile(item: dict, profile: dict) -> bool:
+    """Return whether a loaded instance has the requested identifier and artifact.
+
+    LM Studio permits different quantizations to share one public API
+    identifier. Matching the identifier alone would therefore leave an old
+    quant loaded after the catalog changes its ``load_key``. Require the
+    configured artifact path/key as well whenever that metadata is available.
+
+    Args:
+        item: One object returned by ``lms ps --json``.
+        profile: The requested catalog profile.
+    """
+    loaded_identifier = item.get("identifier") or ""
+    if loaded_identifier and loaded_identifier != profile_identifier(profile):
+        return False
+    configured_load_key = profile.get("load_key") or ""
+    if configured_load_key and item.get("modelKey") == configured_load_key:
+        return True
+    return model_matches_profile(item, profile)
+
+
 def resolve_load_key(profile: dict, lms: Path) -> str:
     """Resolve a profile to the local LM Studio model key used by `lms load`."""
     configured_key = profile.get("load_key") or profile["model_key"]
@@ -155,11 +176,7 @@ def load_model(profile: dict, lms: Path) -> subprocess.CompletedProcess[str]:
     if ps_check.returncode == 0:
         try:
             loaded_items = json.loads(ps_check.stdout)
-            loaded_ids = {
-                item.get("identifier") or item.get("modelKey")
-                for item in loaded_items
-            }
-            if target_identifier in loaded_ids or profile["model_key"] in loaded_ids:
+            if any(loaded_model_matches_profile(item, profile) for item in loaded_items):
                 LOGGER.info("Model already loaded: %s", target_identifier)
                 return subprocess.CompletedProcess(args=(), returncode=0, stdout="", stderr="")
         except json.JSONDecodeError:
@@ -233,19 +250,15 @@ def switch_model(profile: dict, profiles: list[dict], lms: Path) -> None:
         LOGGER.warning("`lms server start` returned non-zero: %s", server_result.stderr.strip())
     loaded = run_lms(lms, "ps", "--json", check=False)
     previous = None
-    identifiers = set()
+    loaded_items = []
     candidates = switchable_profiles(profiles)
     if loaded.returncode == 0:
         try:
-            identifiers = {
-                item.get("identifier") or item.get("modelKey")
-                for item in json.loads(loaded.stdout)
-            }
+            loaded_items = json.loads(loaded.stdout)
             previous = next(
                 (
                     candidate for candidate in candidates
-                    if profile_identifier(candidate) in identifiers
-                    or candidate["model_key"] in identifiers
+                    if any(loaded_model_matches_profile(item, candidate) for item in loaded_items)
                 ),
                 None,
             )
@@ -265,9 +278,9 @@ def switch_model(profile: dict, profiles: list[dict], lms: Path) -> None:
                 LOGGER.warning("Failed to unload %s: %s", unload_key, result.stderr.strip())
 
     desired_identifier = profile_identifier(profile)
-    is_currently_loaded = (
-        desired_identifier in identifiers or profile["model_key"] in identifiers
-    )
+    is_currently_loaded = any(
+        loaded_model_matches_profile(item, profile) for item in loaded_items
+    ) if loaded.returncode == 0 else False
     if is_currently_loaded:
         LOGGER.info("Already active: %s", desired_identifier)
         LOGGER.info("Active LM Studio model: %s", desired_identifier)

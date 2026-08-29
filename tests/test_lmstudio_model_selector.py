@@ -132,6 +132,7 @@ def test_failed_switch_restores_previous_model(monkeypatch):
         "command": "alternate",
         "model_key": "alternate-coder-key",
         "load_key": "alternate-coder-key",
+        "identifier": "alternate-coder-key",
         "model_path": "example/alternate-coder.gguf",
         "default_main": False,
     })
@@ -146,7 +147,16 @@ def test_failed_switch_restores_previous_model(monkeypatch):
         if args[:2] == ("ps", "--json"):
             # switch_model first call: the alternate is loaded, Qwen3.8-27B is not
             if len([c for c in calls if c[:2] == ("ps", "--json")]) == 1:
-                return MOD.subprocess.CompletedProcess(args, 0, '[{"identifier":"alternate-coder-key"}]', "")
+                return MOD.subprocess.CompletedProcess(
+                    args,
+                    0,
+                    json.dumps([{
+                        "identifier": "alternate-coder-key",
+                        "modelKey": "alternate-coder-key",
+                        "path": "example/alternate-coder.gguf",
+                    }]),
+                    "",
+                )
             # load_model pre-check: qwen3.8-27b is not loaded yet
             return MOD.subprocess.CompletedProcess(args, 0, "[]", "")
         if args[0] == "load" and "qwen3.8-27b" in args:
@@ -222,7 +232,7 @@ def test_load_model_unloads_before_loading_when_model_present(monkeypatch):
 
 
 def test_load_model_skips_when_already_loaded(monkeypatch):
-    """load_model returns early if model is already loaded."""
+    """load_model returns early if the exact configured artifact is loaded."""
     profile = {
         "id": "qwen3.8-27b",
         "model_key": "qwen3.8-27b",
@@ -239,7 +249,14 @@ def test_load_model_skips_when_already_loaded(monkeypatch):
         calls.append(args)
         if args[:2] == ("ps", "--json"):
             return MOD.subprocess.CompletedProcess(
-                args, 0, json.dumps([{"identifier": "qwen3.8-27b"}]), ""
+                args,
+                0,
+                json.dumps([{
+                    "identifier": "qwen3.8-27b",
+                    "modelKey": "qwen3.8-27b-ud-q4_k_xl",
+                    "path": profile["model_path"],
+                }]),
+                "",
             )
         return MOD.subprocess.CompletedProcess(args, 0, "", "")
 
@@ -250,6 +267,77 @@ def test_load_model_skips_when_already_loaded(monkeypatch):
     # Verify load was NOT called since model was already present
     load_calls = [c for c in calls if c[:1] == ("load",)]
     assert len(load_calls) == 0
+
+
+def test_load_model_reloads_matching_identifier_with_wrong_artifact(monkeypatch, tmp_path):
+    """A stale quant sharing the public identifier must be unloaded and replaced."""
+    profile = _profile(MOD.load_profiles(CATALOG), "qwen3.8-27b")
+    lms_calls = []
+    sdk_calls = []
+    ps_count = 0
+
+    def fake_run_lms(_lms, *args, check=True):
+        nonlocal ps_count
+        lms_calls.append(args)
+        if args[:2] == ("ls", "--json"):
+            return MOD.subprocess.CompletedProcess(
+                args,
+                0,
+                json.dumps([{"modelKey": profile["load_key"], "path": profile["model_path"]}]),
+                "",
+            )
+        if args[:2] == ("ps", "--json"):
+            ps_count += 1
+            loaded = [{
+                "identifier": "qwen3.8-27b",
+                "modelKey": "qwen3.8-27b@q2_k_xl",
+                "path": "unsloth/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-Q2_K_XL.gguf",
+            }] if ps_count == 1 else []
+            return MOD.subprocess.CompletedProcess(args, 0, json.dumps(loaded), "")
+        return MOD.subprocess.CompletedProcess(args, 0, "", "")
+
+    def fake_run(args, **kwargs):
+        sdk_calls.append(args)
+        return MOD.subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setenv("LMSTUDIO_SDK_LOADER", str(tmp_path / "loader.mjs"))
+    monkeypatch.setattr(MOD, "run_lms", fake_run_lms)
+    monkeypatch.setattr(MOD.subprocess, "run", fake_run)
+    monkeypatch.setattr(MOD, "time", type("time", (), {"sleep": staticmethod(lambda _: None)})())
+
+    result = MOD.load_model(profile, Path("/fake/lms"))
+
+    assert result.returncode == 0
+    assert any(call[:1] == ("unload",) for call in lms_calls)
+    assert sdk_calls[-1][sdk_calls[-1].index("--model") + 1] == "qwen3.8-27b@q3_k_xl"
+
+
+def test_switch_model_does_not_treat_wrong_artifact_as_active(monkeypatch):
+    """Runtime switching delegates to load_model when only an old quant is loaded."""
+    profiles = MOD.load_profiles(CATALOG)
+    target = _profile(profiles, "qwen3.8-27b")
+    loaded = [{
+        "identifier": "qwen3.8-27b",
+        "modelKey": "qwen3.8-27b@q2_k_xl",
+        "path": "unsloth/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-Q2_K_XL.gguf",
+    }]
+    load_calls = []
+
+    def fake_run_lms(_lms, *args, check=True):
+        if args[:2] == ("ps", "--json"):
+            return MOD.subprocess.CompletedProcess(args, 0, json.dumps(loaded), "")
+        return MOD.subprocess.CompletedProcess(args, 0, "", "")
+
+    def fake_load(profile, _lms):
+        load_calls.append(profile["load_key"])
+        return MOD.subprocess.CompletedProcess((), 0, "", "")
+
+    monkeypatch.setattr(MOD, "run_lms", fake_run_lms)
+    monkeypatch.setattr(MOD, "load_model", fake_load)
+
+    MOD.switch_model(target, profiles, Path("/fake/lms"))
+
+    assert load_calls == ["qwen3.8-27b@q3_k_xl"]
 
 
 def test_load_model_resolves_local_model_key_from_catalog_path(monkeypatch):
