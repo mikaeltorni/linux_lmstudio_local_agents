@@ -245,8 +245,8 @@ def test_upgrade_catalog_applies_new_startup_policy_and_preserves_other_choices(
     upgraded = lm.upgrade_catalog(installed, registry)
 
     upgraded_qwen = lm.find_profile(upgraded, "qwen3.8-27b")
-    assert upgraded["schema_version"] == 8
-    assert upgraded_qwen["model_path"].endswith("UD-Q2_K_XL.gguf")
+    assert upgraded["schema_version"] == 9
+    assert upgraded_qwen["model_path"].endswith("UD-Q3_K_XL.gguf")
     assert upgraded_qwen["context_length"] == 131072
     assert upgraded_qwen["switch_env_var"] == "MY_QWEN_SWITCH"
     assert upgraded_qwen["default_startup"] is False
@@ -259,11 +259,11 @@ def test_upgrade_catalog_preserves_startup_choice_after_policy_schema(registry):
     installed = copy.deepcopy(registry)
     installed["profiles"][1]["default_startup"] = True
     shipped = copy.deepcopy(registry)
-    shipped["schema_version"] = 9
+    shipped["schema_version"] = 10
 
     upgraded = lm.upgrade_catalog(installed, shipped)
 
-    assert upgraded["schema_version"] == 9
+    assert upgraded["schema_version"] == 10
     assert lm.find_profile(upgraded, "qwen3.8-27b")["default_startup"] is True
 
 
@@ -281,8 +281,8 @@ def test_boot_load_specs_follows_switch_var(registry):
     assert [spec["model_key"] for spec in specs] == ["qwen3.8-27b"]
     assert specs[0]["gpu"] == "max"
     assert specs[0]["context_length"] == 131072
-    assert specs[0]["load_key"] == "qwen3.8-27b@q2_k_xl"
-    assert specs[0]["model_path"].endswith("Qwen3.8-27B-UD-Q2_K_XL.gguf")
+    assert specs[0]["load_key"] == "qwen3.8-27b@q3_k_xl"
+    assert specs[0]["model_path"].endswith("Qwen3.8-27B-UD-Q3_K_XL.gguf")
     assert specs[0]["ttl"] == 900
     assert specs[0]["speculative_draft_mtp"] is True
     assert specs[0]["k_cache_quantization_type"] == "q8_0"
