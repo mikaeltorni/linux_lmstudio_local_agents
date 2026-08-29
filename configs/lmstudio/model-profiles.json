@@ -1,5 +1,5 @@
 {
-  "schema_version": 6,
+  "schema_version": 7,
   "main_env_var": "LMSTUDIO_MAIN_MODEL",
   "documentation": {
     "lms_load": "https://lmstudio.ai/docs/cli/models (lms load)",
@@ -80,7 +80,7 @@
       "default_keep_on": false,
       "default_main": true,
       "default_startup": false,
-      "startup_policy_schema": 6
+      "startup_policy_schema": 7
     }
   ]
 }

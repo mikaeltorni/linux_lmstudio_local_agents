@@ -231,7 +231,7 @@ def test_upgrade_catalog_applies_new_startup_policy_and_preserves_other_choices(
     upgraded = lm.upgrade_catalog(installed, registry)
 
     upgraded_qwen = lm.find_profile(upgraded, "qwen3.8-27b")
-    assert upgraded["schema_version"] == 6
+    assert upgraded["schema_version"] == 7
     assert upgraded_qwen["model_path"].endswith("UD-Q2_K_XL.gguf")
     assert upgraded_qwen["context_length"] == 131072
     assert upgraded_qwen["switch_env_var"] == "MY_QWEN_SWITCH"
@@ -245,11 +245,11 @@ def test_upgrade_catalog_preserves_startup_choice_after_policy_schema(registry):
     installed = copy.deepcopy(registry)
     installed["profiles"][1]["default_startup"] = True
     shipped = copy.deepcopy(registry)
-    shipped["schema_version"] = 7
+    shipped["schema_version"] = 8
 
     upgraded = lm.upgrade_catalog(installed, shipped)
 
-    assert upgraded["schema_version"] == 7
+    assert upgraded["schema_version"] == 8
     assert lm.find_profile(upgraded, "qwen3.8-27b")["default_startup"] is True
 
 

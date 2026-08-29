@@ -71,7 +71,7 @@ full 131,072-token window without reserving nearly all GPU memory at desktop
 startup.
 Schema-5 catalogs are migrated to this startup-off policy once so upgrades do
 not silently retain the former GPU-saturating autostart. Explicit startup
-choices made under schema 6 or later remain preserved by subsequent upgrades.
+choices made under schema 7 or later remain preserved by subsequent upgrades.
 
 At runtime the active main model is resolved by precedence: the first model whose
 `switch_env_var` is truthy, else `LMSTUDIO_MAIN_MODEL` when it names a model, else
