@@ -56,11 +56,11 @@ def _silent_writer(_text):
 
 
 def test_initial_state_matches_shipped_defaults(profiles):
-    """Qwen is installed on demand while optional VibeThinker stays deselected."""
+    """Qwen is installed and autostarted while optional VibeThinker stays deselected."""
     state = menu.SelectionState(profiles)
     sel = state.selection()
     assert sel["selected_ids"] == ["qwen3.8-27b"]
-    assert sel["autostart_ids"] == []
+    assert sel["autostart_ids"] == ["qwen3.8-27b"]
     rendered = menu.render(state)
     assert "LMSTUDIO_USE_VIBETHINKER" in rendered
     assert "LMSTUDIO_USE_QWEN3_8_27B" in rendered

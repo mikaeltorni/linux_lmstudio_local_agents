@@ -68,7 +68,7 @@ def test_catalog_contains_expected_model_commands():
     assert qwen["context_checkpoints"] == 4
     assert qwen["offload_kv_cache_to_gpu"] is False
     assert qwen["ttl"] == 900
-    assert profiles["qwen3.8-27b"]["default_startup"] is False
+    assert profiles["qwen3.8-27b"]["default_startup"] is True
     assert profiles["vibethinker"]["model_key"] == "vibethinker-1.5b"
     assert profiles["vibethinker"]["default_install"] is False
     assert profiles["vibethinker"]["default_keep_on"] is False

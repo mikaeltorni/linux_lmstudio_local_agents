@@ -204,7 +204,7 @@ def test_cli_active_main_and_keep_on(registry, capsys):
 
 
 def test_cli_boot_load_serializes_booleans_for_shell_cases(capsys, monkeypatch):
-    """On-demand Qwen records use lowercase booleans accepted by the shell loader."""
+    """Startup Qwen records use lowercase booleans accepted by the shell loader."""
     monkeypatch.setenv("LMSTUDIO_USE_QWEN3_8_27B", "1")
     assert lm.main(["boot-load", "--catalog", str(CATALOG)]) == 0
     records = capsys.readouterr().out.strip().splitlines()
@@ -224,7 +224,7 @@ def test_cli_default_plan_json(capsys):
 
 
 def test_upgrade_catalog_applies_new_startup_policy_and_preserves_other_choices(registry):
-    """A new safety policy resets legacy startup while preserving other choices."""
+    """A new startup policy enables Qwen while preserving other choices."""
     installed = copy.deepcopy(registry)
     installed["schema_version"] = 5
     qwen = lm.find_profile(installed, "qwen3.8-27b")
@@ -232,7 +232,7 @@ def test_upgrade_catalog_applies_new_startup_policy_and_preserves_other_choices(
         "model_path": "unsloth/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-Q4_K_XL.gguf",
         "context_length": 40960,
         "switch_env_var": "MY_QWEN_SWITCH",
-        "default_startup": True,
+        "default_startup": False,
         "group": 7,
     })
     custom = lm.normalize_custom_profile({
@@ -245,33 +245,33 @@ def test_upgrade_catalog_applies_new_startup_policy_and_preserves_other_choices(
     upgraded = lm.upgrade_catalog(installed, registry)
 
     upgraded_qwen = lm.find_profile(upgraded, "qwen3.8-27b")
-    assert upgraded["schema_version"] == 9
+    assert upgraded["schema_version"] == 10
     assert upgraded_qwen["model_path"].endswith("UD-Q3_K_XL.gguf")
     assert upgraded_qwen["context_length"] == 131072
     assert upgraded_qwen["switch_env_var"] == "MY_QWEN_SWITCH"
-    assert upgraded_qwen["default_startup"] is False
+    assert upgraded_qwen["default_startup"] is True
     assert upgraded_qwen["group"] == 7
     assert lm.find_profile(upgraded, custom["id"])["custom"] is True
 
 
 def test_upgrade_catalog_preserves_startup_choice_after_policy_schema(registry):
-    """Later schema upgrades preserve startup choices made under the safe policy."""
+    """Later schema upgrades preserve explicit startup choices."""
     installed = copy.deepcopy(registry)
     installed["profiles"][1]["default_startup"] = True
     shipped = copy.deepcopy(registry)
-    shipped["schema_version"] = 10
+    shipped["schema_version"] = 11
 
     upgraded = lm.upgrade_catalog(installed, shipped)
 
-    assert upgraded["schema_version"] == 10
+    assert upgraded["schema_version"] == 11
     assert lm.find_profile(upgraded, "qwen3.8-27b")["default_startup"] is True
 
 
 def test_boot_load_specs_default_order(registry):
-    """No model loads at boot when the sole default model is on demand."""
+    """The shipped Qwen default is emitted for boot loading."""
     plan = lm.default_plan(registry)
     specs = lm.boot_load_specs(registry, plan, env={})
-    assert specs == []
+    assert [spec["model_key"] for spec in specs] == ["qwen3.8-27b"]
 
 
 def test_boot_load_specs_follows_switch_var(registry):
