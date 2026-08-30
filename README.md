@@ -55,26 +55,25 @@ default (non-interactive) install ships these fields ready to go:
 | Model | Role | Default |
 |---|---|---|
 | `vibethinker` (VibeThinker 1.5B) | optional legacy editor autocomplete | **not installed, startup off** (`LMSTUDIO_USE_VIBETHINKER`) |
-| `qwen3.8-27b` (Qwen3.8-27B, Unsloth Dynamic 3.0 UD-Q3_K_XL) | on-demand agentic coder, 131,072-token context; Q8 RAM KV cache + MTP | **main, startup off** (`LMSTUDIO_USE_QWEN3_8_27B`, `LMSTUDIO_MAIN_MODEL`) |
+| `qwen3.8-27b` (Qwen3.8-27B, Unsloth Dynamic 3.0 UD-Q3_K_XL) | agentic coder, 131,072-token context; Q8 RAM KV cache + MTP | **main, startup on** (`LMSTUDIO_USE_QWEN3_8_27B`, `LMSTUDIO_MAIN_MODEL`) |
 
 The 128K Qwen profile uses LM Studio's official JavaScript SDK because `lms
 load` does not expose KV-cache quantization or context-checkpoint controls. The
 installer deploys `lmstudio-sdk-loader.mjs`, and full root installs include
 Node.js. The helper locates the SDK bundled with LM Studio's standard plugins;
-its load transitions and failures are written to the service journal.
+its load transitions and failures are written to the service journal. Qwen is
+loaded during the serving service's startup and remains runtime-switchable;
+LM Studio may still evict it after its configured idle TTL.
 The public API identifier remains `qwen3.8-27b`; an internal quant-specific
 `load_key` selects Q3_K_XL deterministically when multiple local variants
-exist. Qwen remains installed and is loaded by `lmstudio-model --restore` when
-an Agent Command Center Qwen session starts. Its Q8 KV cache stays in system
-RAM, and LM Studio unloads the model after 15 idle minutes. This preserves the
-full 131,072-token window without reserving nearly all GPU memory at desktop
-startup.
+exist. Its Q8 KV cache stays in system RAM, and LM Studio unloads the model
+after 15 idle minutes. This preserves the full 131,072-token window while
+making Qwen ready immediately after the serving service starts.
 VibeThinker remains selectable for an explicit legacy Continue setup, but is no
 longer downloaded, kept resident, or loaded at boot by the shipped defaults;
 Cursor Autotab is the default editor completion path.
-Schema-5 catalogs are migrated to this startup-off policy once so upgrades do
-not silently retain the former GPU-saturating autostart. Explicit startup
-choices made under schema 7 or later remain preserved by subsequent upgrades.
+Older catalogs are migrated to this startup-on policy once. Explicit startup
+choices made under schema 10 or later remain preserved by subsequent upgrades.
 
 At runtime the active main model is resolved by precedence: the first model whose
 `switch_env_var` is truthy, else `LMSTUDIO_MAIN_MODEL` when it names a model, else
