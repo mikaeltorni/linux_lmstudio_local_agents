@@ -62,13 +62,12 @@ load` does not expose KV-cache quantization or context-checkpoint controls. The
 installer deploys `lmstudio-sdk-loader.mjs`, and full root installs include
 Node.js. The helper locates the SDK bundled with LM Studio's standard plugins;
 its load transitions and failures are written to the service journal. Qwen is
-loaded during the serving service's startup and remains runtime-switchable;
-LM Studio may still evict it after its configured idle TTL.
+loaded during the serving service's startup, remains runtime-switchable, and
+uses a zero TTL so idle eviction cannot remove it after boot.
 The public API identifier remains `qwen3.8-27b`; an internal quant-specific
 `load_key` selects Q3_K_XL deterministically when multiple local variants
-exist. Its Q8 KV cache stays in system RAM, and LM Studio unloads the model
-after 15 idle minutes. This preserves the full 131,072-token window while
-making Qwen ready immediately after the serving service starts.
+exist. Its Q8 KV cache stays in system RAM. This preserves the full
+131,072-token window while keeping Qwen ready after the serving service starts.
 VibeThinker remains selectable for an explicit legacy Continue setup, but is no
 longer downloaded, kept resident, or loaded at boot by the shipped defaults;
 Cursor Autotab is the default editor completion path.

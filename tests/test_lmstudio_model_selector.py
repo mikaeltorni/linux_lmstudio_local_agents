@@ -67,7 +67,7 @@ def test_catalog_contains_expected_model_commands():
     assert qwen["v_cache_quantization_type"] == "q8_0"
     assert qwen["context_checkpoints"] == 4
     assert qwen["offload_kv_cache_to_gpu"] is False
-    assert qwen["ttl"] == 900
+    assert qwen["ttl"] == 0
     assert profiles["qwen3.8-27b"]["default_startup"] is True
     assert profiles["vibethinker"]["model_key"] == "vibethinker-1.5b"
     assert profiles["vibethinker"]["default_install"] is False
@@ -414,7 +414,7 @@ def test_load_model_uses_sdk_loader_for_advanced_profile(monkeypatch, tmp_path):
     assert args[args.index("--k-cache") + 1] == "q8_0"
     assert args[args.index("--v-cache") + 1] == "q8_0"
     assert args[args.index("--context-checkpoints") + 1] == "4"
-    assert args[args.index("--ttl") + 1] == "900"
+    assert args[args.index("--ttl") + 1] == "0"
     assert "--offload-kv-cache" not in args
     assert "--mtp" in args
 
