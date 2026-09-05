@@ -33,13 +33,6 @@ Apply changes silently from the command line: restart the user service with
 reload, logout, or reboot. Switching models is a runtime `lms` operation and
 needs no session restart.
 
-## Clean Installation Compatibility
-
-All changes must remain compatible with a clean install run through
-`installation_scripts/install.sh` and this repository's `install.sh`. Add every
-required dependency, asset, and configuration to the installer; keep steps
-idempotent. Do not rely on files that exist only on the current machine.
-
 ## Standalone first
 
 A missing sibling repository must never block installation. The component
