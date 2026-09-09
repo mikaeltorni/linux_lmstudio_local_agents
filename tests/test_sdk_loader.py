@@ -34,13 +34,13 @@ def test_dry_run_maps_4090_tps_load_config():
             "node", str(LOADER), "--dry-run",
             "--model", "qwen3.8-27b@q3_k_xl",
             "--identifier", "qwen3.8-27b",
-            "--context-length", "32768",
+            "--context-length", "131072",
             "--gpu", "max",
             "--parallel", "1",
-            "--k-cache", "f16",
-            "--v-cache", "f16",
+            "--k-cache", "q8_0",
+            "--v-cache", "q8_0",
             "--context-checkpoints", "4",
-            "--eval-batch-size", "1024",
+            "--eval-batch-size", "2048",
             "--physical-batch-size", "512",
             "--mtp",
             "--flash-attention",
@@ -56,13 +56,13 @@ def test_dry_run_maps_4090_tps_load_config():
     assert payload["model"] == "qwen3.8-27b@q3_k_xl"
     assert payload["identifier"] == "qwen3.8-27b"
     config = payload["config"]
-    assert config["contextLength"] == 32768
+    assert config["contextLength"] == 131072
     assert config["maxParallelPredictions"] == 1
     assert config["gpu"] == {"ratio": "max"}
-    assert config["llamaKCacheQuantizationType"] == "f16"
-    assert config["llamaVCacheQuantizationType"] == "f16"
+    assert config["llamaKCacheQuantizationType"] == "q8_0"
+    assert config["llamaVCacheQuantizationType"] == "q8_0"
     assert config["contextCheckpoints"] == 4
-    assert config["evalBatchSize"] == 1024
+    assert config["evalBatchSize"] == 2048
     assert config["physicalBatchSize"] == 512
     assert config["speculativeDraftMtp"] is True
     assert config["flashAttention"] is True
@@ -89,11 +89,11 @@ def test_shipped_qwen_profile_packs_gpu_kv_winner():
     assert payload["model"] == "qwen3.8-27b@q3_k_xl"
     assert payload["identifier"] == "qwen3.8-27b"
     config = payload["config"]
-    assert config["contextLength"] == qwen["context_length"] == 32768
+    assert config["contextLength"] == qwen["context_length"] == 131072
     assert config["gpu"] == {"ratio": "max"}
-    assert config["llamaKCacheQuantizationType"] == "f16"
-    assert config["llamaVCacheQuantizationType"] == "f16"
-    assert config["evalBatchSize"] == 1024
+    assert config["llamaKCacheQuantizationType"] == "q8_0"
+    assert config["llamaVCacheQuantizationType"] == "q8_0"
+    assert config["evalBatchSize"] == 2048
     assert config["flashAttention"] is True
     assert config["offloadKVCacheToGpu"] is True
     assert config["speculativeDraftMtp"] is True
