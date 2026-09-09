@@ -55,9 +55,9 @@ default (non-interactive) install ships these fields ready to go:
 | Model | Role | Default |
 |---|---|---|
 | `vibethinker` (VibeThinker 1.5B) | optional legacy editor autocomplete | **not installed, startup off** (`LMSTUDIO_USE_VIBETHINKER`) |
-| `qwen3.8-27b` (Qwen3.8-27B, Unsloth Dynamic 3.0 UD-Q3_K_XL) | agentic coder, 131,072-token context; Q8 RAM KV cache + MTP | **main, startup on** (`LMSTUDIO_USE_QWEN3_8_27B`, `LMSTUDIO_MAIN_MODEL`) |
+| `qwen3.8-27b` (Qwen3.8-27B, Unsloth Dynamic 3.0 UD-Q3_K_XL) | agentic coder, 32,768-token context; GPU-resident f16 KV cache + MTP | **main, startup on** (`LMSTUDIO_USE_QWEN3_8_27B`, `LMSTUDIO_MAIN_MODEL`) |
 
-The 128K Qwen profile uses LM Studio's official JavaScript SDK because `lms
+The Qwen profile uses LM Studio's official JavaScript SDK because `lms
 load` does not expose KV-cache quantization or context-checkpoint controls. The
 installer deploys `lmstudio-sdk-loader.mjs`, and full root installs include
 Node.js. The helper locates the SDK bundled with LM Studio's standard plugins;
@@ -66,8 +66,9 @@ loaded during the serving service's startup, remains runtime-switchable, and
 uses a zero TTL so idle eviction cannot remove it after boot.
 The public API identifier remains `qwen3.8-27b`; an internal quant-specific
 `load_key` selects Q3_K_XL deterministically when multiple local variants
-exist. Its Q8 KV cache stays in system RAM. This preserves the full
-131,072-token window while keeping Qwen ready after the serving service starts.
+exist. Weights stay fully GPU-offloaded with the KV cache on the RTX 4090.
+The 32,768-token window is the measured 4090 decode-TPS plateau for this GGUF;
+a 131,072-token RAM-KV layout is slower and is no longer the shipped default.
 VibeThinker remains selectable for an explicit legacy Continue setup, but is no
 longer downloaded, kept resident, or loaded at boot by the shipped defaults;
 Cursor Autotab is the default editor completion path.

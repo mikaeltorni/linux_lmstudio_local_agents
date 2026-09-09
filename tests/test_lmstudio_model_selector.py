@@ -62,11 +62,15 @@ def test_catalog_contains_expected_model_commands():
     assert qwen["model_path"].endswith("Qwen3.8-27B-UD-Q3_K_XL.gguf")
     assert qwen["sha256"] == "8c2a45ff85e7674ca185ec8eb6cdeab0e617ed9d8018caed0b64380eb2a67a5e"
     assert qwen["size_bytes"] == 13146393504
-    assert qwen["context_length"] == 131072
-    assert qwen["k_cache_quantization_type"] == "q8_0"
-    assert qwen["v_cache_quantization_type"] == "q8_0"
+    assert qwen["context_length"] == 32768
+    assert qwen["k_cache_quantization_type"] == "f16"
+    assert qwen["v_cache_quantization_type"] == "f16"
+    assert qwen["eval_batch_size"] == 1024
+    assert qwen["physical_batch_size"] == 512
+    assert qwen["flash_attention"] is True
     assert qwen["context_checkpoints"] == 4
-    assert qwen["offload_kv_cache_to_gpu"] is False
+    assert qwen["offload_kv_cache_to_gpu"] is True
+    assert qwen["gpu"] == "max"
     assert qwen["ttl"] == 0
     assert profiles["qwen3.8-27b"]["default_startup"] is True
     assert profiles["vibethinker"]["model_key"] == "vibethinker-1.5b"
@@ -410,12 +414,15 @@ def test_load_model_uses_sdk_loader_for_advanced_profile(monkeypatch, tmp_path):
     args = calls[-1][0]
     assert args[:2] == ["/fake/node", str(loader)]
     assert args[args.index("--model") + 1] == "qwen3.8-27b@q3_k_xl"
-    assert args[args.index("--context-length") + 1] == "131072"
-    assert args[args.index("--k-cache") + 1] == "q8_0"
-    assert args[args.index("--v-cache") + 1] == "q8_0"
+    assert args[args.index("--context-length") + 1] == "32768"
+    assert args[args.index("--k-cache") + 1] == "f16"
+    assert args[args.index("--v-cache") + 1] == "f16"
+    assert args[args.index("--eval-batch-size") + 1] == "1024"
+    assert args[args.index("--physical-batch-size") + 1] == "512"
     assert args[args.index("--context-checkpoints") + 1] == "4"
     assert args[args.index("--ttl") + 1] == "0"
-    assert "--offload-kv-cache" not in args
+    assert "--offload-kv-cache" in args
+    assert "--flash-attention" in args
     assert "--mtp" in args
 
 
