@@ -34,7 +34,7 @@ def test_dry_run_maps_4090_tps_load_config():
             "node", str(LOADER), "--dry-run",
             "--model", "qwen3.8-27b@q3_k_xl",
             "--identifier", "qwen3.8-27b",
-            "--context-length", "131072",
+            "--context-length", "98304",
             "--gpu", "max",
             "--parallel", "1",
             "--k-cache", "q8_0",
@@ -56,7 +56,7 @@ def test_dry_run_maps_4090_tps_load_config():
     assert payload["model"] == "qwen3.8-27b@q3_k_xl"
     assert payload["identifier"] == "qwen3.8-27b"
     config = payload["config"]
-    assert config["contextLength"] == 131072
+    assert config["contextLength"] == 98304
     assert config["maxParallelPredictions"] == 1
     assert config["gpu"] == {"ratio": "max"}
     assert config["llamaKCacheQuantizationType"] == "q8_0"
@@ -89,7 +89,7 @@ def test_shipped_qwen_profile_packs_gpu_kv_winner():
     assert payload["model"] == "qwen3.8-27b@q3_k_xl"
     assert payload["identifier"] == "qwen3.8-27b"
     config = payload["config"]
-    assert config["contextLength"] == qwen["context_length"] == 131072
+    assert config["contextLength"] == qwen["context_length"] == 98304
     assert config["gpu"] == {"ratio": "max"}
     assert config["llamaKCacheQuantizationType"] == "q8_0"
     assert config["llamaVCacheQuantizationType"] == "q8_0"

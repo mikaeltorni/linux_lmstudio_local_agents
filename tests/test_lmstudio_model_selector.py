@@ -62,7 +62,7 @@ def test_catalog_contains_expected_model_commands():
     assert qwen["model_path"].endswith("Qwen3.8-27B-UD-Q3_K_XL.gguf")
     assert qwen["sha256"] == "8c2a45ff85e7674ca185ec8eb6cdeab0e617ed9d8018caed0b64380eb2a67a5e"
     assert qwen["size_bytes"] == 13146393504
-    assert qwen["context_length"] == 131072
+    assert qwen["context_length"] == 98304
     assert qwen["k_cache_quantization_type"] == "q8_0"
     assert qwen["v_cache_quantization_type"] == "q8_0"
     assert qwen["eval_batch_size"] == 2048
@@ -414,7 +414,7 @@ def test_load_model_uses_sdk_loader_for_advanced_profile(monkeypatch, tmp_path):
     args = calls[-1][0]
     assert args[:2] == ["/fake/node", str(loader)]
     assert args[args.index("--model") + 1] == "qwen3.8-27b@q3_k_xl"
-    assert args[args.index("--context-length") + 1] == "131072"
+    assert args[args.index("--context-length") + 1] == "98304"
     assert args[args.index("--k-cache") + 1] == "q8_0"
     assert args[args.index("--v-cache") + 1] == "q8_0"
     assert args[args.index("--eval-batch-size") + 1] == "2048"
