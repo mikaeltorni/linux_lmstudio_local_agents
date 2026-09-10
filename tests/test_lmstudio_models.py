@@ -216,7 +216,7 @@ def test_cli_boot_load_serializes_booleans_for_shell_cases(capsys, monkeypatch):
     assert values["k_cache_quantization_type"] == "q8_0"
     assert values["v_cache_quantization_type"] == "q8_0"
     assert values["eval_batch_size"] == "2048"
-    assert values["context_length"] == "131072"
+    assert values["context_length"] == "98304"
 
 
 def test_cli_default_plan_json(capsys):
@@ -249,9 +249,9 @@ def test_upgrade_catalog_applies_new_startup_policy_and_preserves_other_choices(
     upgraded = lm.upgrade_catalog(installed, registry)
 
     upgraded_qwen = lm.find_profile(upgraded, "qwen3.8-27b")
-    assert upgraded["schema_version"] == 13
+    assert upgraded["schema_version"] == 14
     assert upgraded_qwen["model_path"].endswith("UD-Q3_K_XL.gguf")
-    assert upgraded_qwen["context_length"] == 131072
+    assert upgraded_qwen["context_length"] == 98304
     assert upgraded_qwen["offload_kv_cache_to_gpu"] is True
     assert upgraded_qwen["k_cache_quantization_type"] == "q8_0"
     assert upgraded_qwen["switch_env_var"] == "MY_QWEN_SWITCH"
@@ -266,11 +266,11 @@ def test_upgrade_catalog_preserves_startup_choice_after_policy_schema(registry):
     installed = copy.deepcopy(registry)
     installed["profiles"][1]["default_startup"] = True
     shipped = copy.deepcopy(registry)
-    shipped["schema_version"] = 14
+    shipped["schema_version"] = 15
 
     upgraded = lm.upgrade_catalog(installed, shipped)
 
-    assert upgraded["schema_version"] == 14
+    assert upgraded["schema_version"] == 15
     assert lm.find_profile(upgraded, "qwen3.8-27b")["default_startup"] is True
 
 
@@ -287,7 +287,7 @@ def test_boot_load_specs_follows_switch_var(registry):
     specs = lm.boot_load_specs(registry, plan, env={"LMSTUDIO_USE_QWEN3_8_27B": "1"})
     assert [spec["model_key"] for spec in specs] == ["qwen3.8-27b"]
     assert specs[0]["gpu"] == "max"
-    assert specs[0]["context_length"] == 131072
+    assert specs[0]["context_length"] == 98304
     assert specs[0]["load_key"] == "qwen3.8-27b@q3_k_xl"
     assert specs[0]["model_path"].endswith("Qwen3.8-27B-UD-Q3_K_XL.gguf")
     assert specs[0]["ttl"] == 0
