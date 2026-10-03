@@ -275,6 +275,46 @@ def test_default_path_installs_no_models(tmp_path):
     assert not (tmp_path / ".local/bin/qwen3.8-27b").exists()
 
 
+def test_reconfigure_removes_stale_qwen_wrapper_and_preserves_user_edits(tmp_path):
+    """The optional migration removes generated Qwen commands without user edits."""
+    source_catalog = json.loads(
+        (ROOT / "configs/lmstudio/model-profiles.json").read_text(encoding="utf-8")
+    )
+    source_catalog["schema_version"] = 14
+    qwen = next(profile for profile in source_catalog["profiles"] if profile["id"] == "qwen3.8-27b")
+    qwen.update({"default_install": True, "default_main": True, "default_startup": True})
+    catalog_path = tmp_path / ".config/lmstudio-local-agents/configs/lmstudio/model-profiles.json"
+    catalog_path.parent.mkdir(parents=True)
+    catalog_path.write_text(json.dumps(source_catalog), encoding="utf-8")
+
+    bin_dir = tmp_path / ".local/bin"
+    bin_dir.mkdir(parents=True)
+    qwen_wrapper = bin_dir / "qwen3.8-27b"
+    qwen_wrapper.write_text(
+        "#!/usr/bin/env bash\n"
+        "# Switch the active LM Studio main model to qwen3.8-27b.\n"
+        f'exec "{bin_dir}/lmstudio-model" "qwen3.8-27b" "$@"\n',
+        encoding="utf-8",
+    )
+    edited_vibethinker_wrapper = bin_dir / "vibethinker"
+    edited_content = (
+        "#!/usr/bin/env bash\n"
+        "# Switch the active LM Studio main model to vibethinker.\n"
+        f'exec "{bin_dir}/lmstudio-model" "vibethinker" "$@"\n'
+        "# User edit\n"
+    )
+    edited_vibethinker_wrapper.write_text(edited_content, encoding="utf-8")
+
+    proc = _run(tmp_path, "", call="install_models")
+
+    assert proc.returncode == 0, proc.stderr
+    upgraded = _catalog(tmp_path)
+    qwen = next(profile for profile in upgraded["profiles"] if profile["id"] == "qwen3.8-27b")
+    assert qwen["default_install"] is False
+    assert not qwen_wrapper.exists()
+    assert edited_vibethinker_wrapper.read_text(encoding="utf-8") == edited_content
+
+
 def test_downloads_run_in_background_not_inline(tmp_path):
     """A real install must not block on the multi-GB download.
 
