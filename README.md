@@ -50,20 +50,23 @@ Your choices are
 written into a customized catalog, so downloads, boot-load, and the per-model
 switch commands all follow exactly what you picked — a model you install but do
 not autostart is downloaded and runtime-switchable yet not loaded at boot. The
-default (non-interactive) install ships these fields ready to go:
+shipped model catalog installs no models by default. Qwen remains available as
+an explicit choice in `models`; its profile stays designated as main when
+selected, but its shipped defaults do not install or load it at startup:
 
-| Model | Role | Default |
+| Model | Role | Shipped profile defaults |
 |---|---|---|
 | `vibethinker` (VibeThinker 1.5B) | optional legacy editor autocomplete | **not installed, startup off** (`LMSTUDIO_USE_VIBETHINKER`) |
-| `qwen3.8-27b` (Qwen3.8-27B, Unsloth Dynamic 3.0 UD-Q3_K_XL) | agentic coder, 98,304-token context; GPU-resident Q8 KV cache + MTP | **main, startup on** (`LMSTUDIO_USE_QWEN3_8_27B`, `LMSTUDIO_MAIN_MODEL`) |
+| `qwen3.8-27b` (Qwen3.8-27B, Unsloth Dynamic 3.0 UD-Q3_K_XL) | agentic coder, 98,304-token context; GPU-resident Q8 KV cache + MTP | **not installed, startup off; main slot when selected** (`LMSTUDIO_USE_QWEN3_8_27B`, `LMSTUDIO_MAIN_MODEL`) |
 
 The Qwen profile uses LM Studio's official JavaScript SDK because `lms
 load` does not expose KV-cache quantization or context-checkpoint controls. The
 installer deploys `lmstudio-sdk-loader.mjs`, and full root installs include
 Node.js. The helper locates the SDK bundled with LM Studio's standard plugins;
 its load transitions and failures are written to the service journal. Qwen is
-loaded during the serving service's startup, remains runtime-switchable, and
-uses a zero TTL so idle eviction cannot remove it after boot.
+not downloaded or loaded unless selected. After selection it remains
+runtime-switchable; enable startup for it in the model menu if it should load at
+boot. It uses a zero TTL while loaded so idle eviction cannot remove it.
 The public API identifier remains `qwen3.8-27b`; an internal quant-specific
 `load_key` selects Q3_K_XL deterministically when multiple local variants
 exist. Weights stay fully GPU-offloaded with the KV cache on the RTX 4090.
@@ -73,8 +76,9 @@ almost no free VRAM beside the desktop.
 VibeThinker remains selectable for an explicit legacy Continue setup, but is no
 longer downloaded, kept resident, or loaded at boot by the shipped defaults;
 Cursor Autotab is the default editor completion path.
-Older catalogs are migrated to this startup-on policy once. Explicit startup
-choices made under schema 10 or later remain preserved by subsequent upgrades.
+Older catalogs adopt the shipped install-off and startup-off policy once.
+Explicit choices made under schema 15 or later remain preserved by subsequent
+upgrades.
 
 At runtime the active main model is resolved by precedence: the first model whose
 `switch_env_var` is truthy, else `LMSTUDIO_MAIN_MODEL` when it names a model, else
@@ -110,7 +114,7 @@ git clone https://github.com/mikaeltorni/linux_lmstudio_local_agents.git
 cd linux_lmstudio_local_agents
 bash install.sh                 # interactive component menu, then per-model menu
 bash install.sh --default       # non-interactive: core app/service, no models
-bash install.sh --select lm_studio_app,serve,models   # app/service plus model selector
+bash install.sh --select lm_studio_app,serve,models   # app/service plus model selector; choose Qwen to opt in
 bash install.sh --select serve  # core serving only, no model downloads
 ```
 
