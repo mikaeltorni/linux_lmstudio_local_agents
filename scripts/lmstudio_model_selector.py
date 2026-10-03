@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Switch the active GPU-resident LM Studio model and persist the choice.
 
-Installed as ``lmstudio-model``. Used by the boot service (``--restore``), by the
-per-model switch wrappers, and directly by users to move the single switchable
-"main" slot between models. Keep-on models (e.g. the CPU-resident Qwen coder) are
-loaded separately by the boot script and are not unloaded here.
+Installed as ``lmstudio-model``. Used by per-model switch wrappers and directly
+by users to move the single switchable "main" slot between models. Keep-on models
+are loaded separately by the boot script and are not unloaded here.
 """
 
 from __future__ import annotations
@@ -29,12 +28,15 @@ def load_profiles(path: Path) -> list[dict]:
 
 
 def selected_profile(profiles: list[dict], requested: str | None, state_file: Path) -> dict:
-    """Resolve the persisted or default model profile."""
+    """Resolve the requested, persisted, or boot-default model profile."""
     selected = requested or ""
     if requested is None and state_file.is_file():
         selected = state_file.read_text(encoding="utf-8").strip()
     if requested is None and not selected:
-        selected = next(profile["id"] for profile in profiles if profile.get("boot_preload"))
+        fallback = next((profile for profile in profiles if profile.get("boot_preload")), None)
+        if fallback is None:
+            raise ValueError("no model profile is selected and no boot default is configured")
+        selected = fallback["id"]
     for profile in profiles:
         if selected in (profile["id"], profile.get("command"), profile["model_key"]):
             return profile

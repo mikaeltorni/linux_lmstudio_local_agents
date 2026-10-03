@@ -265,13 +265,14 @@ def test_download_scripts_route_catalog_sources_through_lms_get():
     assert "while IFS=$'\\x1f' read -r model_id" in background
 
 
-def test_default_path_installs_full_catalog(tmp_path):
-    """With no selection signal, only the shipped on-demand Qwen default is used."""
+def test_default_path_installs_no_models(tmp_path):
+    """With no selection signal, the shipped model catalog stays optional."""
     proc = _run(tmp_path, "", call="install_models")
     assert proc.returncode == 0, proc.stderr
     catalog = _catalog(tmp_path)
     installed = {p["id"] for p in catalog["profiles"] if p["default_install"]}
-    assert installed == {"qwen3.8-27b"}
+    assert installed == set()
+    assert not (tmp_path / ".local/bin/qwen3.8-27b").exists()
 
 
 def test_downloads_run_in_background_not_inline(tmp_path):

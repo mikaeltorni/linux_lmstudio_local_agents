@@ -3,8 +3,8 @@
 
 These exercise the pure planning/resolution helpers against the real registry in
 configs/lmstudio/model-profiles.json, so the shipped default layout (VibeThinker
-retained as optional and Qwen3.8-27B main) is locked in, plus the env-var switching
-precedence and the validation rules.
+retained as optional and Qwen3.8-27B available for explicit selection) is locked
+in, plus the env-var switching precedence and the validation rules.
 """
 
 from __future__ import annotations
@@ -71,16 +71,14 @@ def test_find_profile_by_id_command_and_key(registry):
     assert lm.find_profile(registry, "nope") is None
 
 
-def test_default_plan_matches_shipped_layout(registry):
-    """The default plan encodes the user's required default model layout."""
+def test_default_plan_has_no_models_until_one_is_selected(registry):
+    """The shipped default plan does not install or select a model."""
     plan = lm.default_plan(registry)
-    assert plan.install_ids == ("qwen3.8-27b",)
+    assert plan.install_ids == ()
     assert plan.keep_on_ids == ()
-    assert plan.main_id == "qwen3.8-27b"
+    assert plan.main_id == ""
     assert plan.main_env_var == "LMSTUDIO_MAIN_MODEL"
-    assert plan.switch_env_vars == {
-        "qwen3.8-27b": "LMSTUDIO_USE_QWEN3_8_27B",
-    }
+    assert plan.switch_env_vars == {}
 
 
 def test_default_plan_keep_on_model_keys(registry):
@@ -89,9 +87,11 @@ def test_default_plan_keep_on_model_keys(registry):
     assert plan.keep_on_model_keys(registry) == []
 
 
-def test_resolve_active_main_defaults_to_qwen3_8_27b(registry):
-    """With no switch variables set, the active main model is Qwen3.8-27B."""
-    plan = lm.default_plan(registry)
+def test_qwen_remains_available_for_explicit_install_selection(registry):
+    """An explicit Qwen selection still resolves it as the active main model."""
+    plan = lm.build_plan(
+        registry, install_ids=["qwen3.8-27b"], keep_on_ids=[], main_id="qwen3.8-27b"
+    )
     assert lm.resolve_active_main(registry, plan, env={})["model_key"] == "qwen3.8-27b"
 
 
@@ -135,7 +135,9 @@ def test_resolve_active_main_main_env_var_names_model(registry):
 
 def test_resolve_active_main_switch_var_beats_main_env_var(registry):
     """A per-model switch var takes precedence over LMSTUDIO_MAIN_MODEL."""
-    plan = lm.default_plan(registry)
+    plan = lm.build_plan(
+        registry, install_ids=["qwen3.8-27b"], keep_on_ids=[], main_id="qwen3.8-27b"
+    )
     active = lm.resolve_active_main(
         registry, plan, env={"LMSTUDIO_MAIN_MODEL": "vibethinker", "LMSTUDIO_USE_QWEN3_8_27B": "1"}
     )
@@ -153,7 +155,9 @@ def test_resolve_active_main_ignores_uninstalled_main_env_target(registry):
 
 def test_falsey_switch_var_does_not_switch(registry):
     """A non-truthy switch value does not change the active model."""
-    plan = lm.default_plan(registry)
+    plan = lm.build_plan(
+        registry, install_ids=["qwen3.8-27b"], keep_on_ids=[], main_id="qwen3.8-27b"
+    )
     assert lm.resolve_active_main(registry, plan, env={"LMSTUDIO_USE_VIBETHINKER": "0"})["model_key"] == "qwen3.8-27b"
     assert lm.resolve_active_main(registry, plan, env={"LMSTUDIO_USE_VIBETHINKER": ""})["model_key"] == "qwen3.8-27b"
 
@@ -196,17 +200,25 @@ def test_build_plan_switch_var_override(registry):
 
 
 def test_cli_active_main_and_keep_on(registry, capsys):
-    """The CLI prints the default active main and an empty keep-on set."""
+    """The CLI reports no active or keep-on model for the shipped defaults."""
     assert lm.main(["active-main", "--catalog", str(CATALOG)]) == 0
-    assert capsys.readouterr().out.strip() == "qwen3.8-27b"
+    assert capsys.readouterr().out.strip() == ""
     assert lm.main(["keep-on", "--catalog", str(CATALOG)]) == 0
     assert capsys.readouterr().out.strip() == ""
 
 
-def test_cli_boot_load_serializes_booleans_for_shell_cases(capsys, monkeypatch):
-    """Startup Qwen records use lowercase booleans accepted by the shell loader."""
+def test_cli_boot_load_serializes_explicit_qwen_selection(capsys, monkeypatch, tmp_path):
+    """Explicit Qwen boot records use lowercase booleans accepted by the shell loader."""
     monkeypatch.setenv("LMSTUDIO_USE_QWEN3_8_27B", "1")
-    assert lm.main(["boot-load", "--catalog", str(CATALOG)]) == 0
+    selected = lm.apply_install_selection(
+        lm.load_registry(CATALOG),
+        selected_ids=["qwen3.8-27b"],
+        autostart_ids=["qwen3.8-27b"],
+        main_id="qwen3.8-27b",
+    )
+    selected_catalog = tmp_path / "selected.json"
+    selected_catalog.write_text(json.dumps(selected), encoding="utf-8")
+    assert lm.main(["boot-load", "--catalog", str(selected_catalog)]) == 0
     records = capsys.readouterr().out.strip().splitlines()
     qwen = records[-1].split(lm.BOOT_LOAD_FIELD_SEPARATOR)
     values = dict(zip(lm.BOOT_LOAD_FIELDS, qwen, strict=True))
@@ -220,23 +232,33 @@ def test_cli_boot_load_serializes_booleans_for_shell_cases(capsys, monkeypatch):
 
 
 def test_cli_default_plan_json(capsys):
-    """The default-plan subcommand emits valid JSON describing the plan."""
+    """The default-plan command emits an empty model selection as valid JSON."""
     assert lm.main(["default-plan", "--catalog", str(CATALOG)]) == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["main_id"] == "qwen3.8-27b"
+    assert payload["install_ids"] == []
+    assert payload["main_id"] == ""
     assert payload["keep_on_ids"] == []
 
 
-def test_upgrade_catalog_applies_new_startup_policy_and_preserves_other_choices(registry):
-    """A new startup policy enables Qwen while preserving other choices."""
+def test_default_download_list_does_not_fetch_qwen(capsys):
+    """The public default download list excludes the optional Qwen model."""
+    assert lm.main(["download-list", "--catalog", str(CATALOG)]) == 0
+    assert capsys.readouterr().out == ""
+
+
+def test_upgrade_catalog_applies_optional_qwen_policy_to_older_catalogs(registry):
+    """Older default catalogs adopt Qwen's optional install and startup policy."""
     installed = copy.deepcopy(registry)
-    installed["schema_version"] = 5
+    installed["schema_version"] = 14
     qwen = lm.find_profile(installed, "qwen3.8-27b")
     qwen.update({
         "model_path": "unsloth/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-Q4_K_XL.gguf",
         "context_length": 40960,
         "switch_env_var": "MY_QWEN_SWITCH",
-        "default_startup": False,
+        "default_install": True,
+        "default_keep_on": True,
+        "default_main": True,
+        "default_startup": True,
         "group": 7,
     })
     custom = lm.normalize_custom_profile({
@@ -249,41 +271,77 @@ def test_upgrade_catalog_applies_new_startup_policy_and_preserves_other_choices(
     upgraded = lm.upgrade_catalog(installed, registry)
 
     upgraded_qwen = lm.find_profile(upgraded, "qwen3.8-27b")
-    assert upgraded["schema_version"] == 14
+    assert upgraded["schema_version"] == 15
     assert upgraded_qwen["model_path"].endswith("UD-Q3_K_XL.gguf")
     assert upgraded_qwen["context_length"] == 98304
     assert upgraded_qwen["offload_kv_cache_to_gpu"] is True
     assert upgraded_qwen["k_cache_quantization_type"] == "q8_0"
     assert upgraded_qwen["switch_env_var"] == "MY_QWEN_SWITCH"
-    assert upgraded_qwen["default_startup"] is True
+    assert upgraded_qwen["default_install"] is False
+    assert upgraded_qwen["default_keep_on"] is False
+    assert upgraded_qwen["default_main"] is True
+    assert upgraded_qwen["default_startup"] is False
     assert upgraded_qwen["ttl"] == 0
     assert upgraded_qwen["group"] == 7
     assert lm.find_profile(upgraded, custom["id"])["custom"] is True
 
 
-def test_upgrade_catalog_preserves_startup_choice_after_policy_schema(registry):
-    """Later schema upgrades preserve explicit startup choices."""
+def test_upgrade_catalog_preserves_explicit_qwen_opt_in_after_policy_schema(registry):
+    """Catalogs past the policy schema retain explicit Qwen opt-in choices."""
     installed = copy.deepcopy(registry)
-    installed["profiles"][1]["default_startup"] = True
+    installed["schema_version"] = 15
+    installed_qwen = lm.find_profile(installed, "qwen3.8-27b")
+    installed_qwen.update({
+        "default_install": True,
+        "default_keep_on": True,
+        "default_main": True,
+        "default_startup": True,
+    })
     shipped = copy.deepcopy(registry)
-    shipped["schema_version"] = 15
+    shipped["schema_version"] = 16
 
     upgraded = lm.upgrade_catalog(installed, shipped)
 
-    assert upgraded["schema_version"] == 15
-    assert lm.find_profile(upgraded, "qwen3.8-27b")["default_startup"] is True
+    assert upgraded["schema_version"] == 16
+    upgraded_qwen = lm.find_profile(upgraded, "qwen3.8-27b")
+    assert upgraded_qwen["default_install"] is True
+    assert upgraded_qwen["default_keep_on"] is True
+    assert upgraded_qwen["default_main"] is True
+    assert upgraded_qwen["default_startup"] is True
+
+
+def test_boot_load_specs_empty_for_default_plan(registry):
+    """The default boot-load command emits no model when none is selected."""
+    plan = lm.default_plan(registry)
+    assert lm.boot_load_specs(registry, plan, env={}) == []
+
+
+def test_explicit_qwen_selection_remains_installable_and_boot_loadable(registry):
+    """A manually selected Qwen profile remains in the install and boot plan."""
+    selected = lm.apply_install_selection(
+        registry,
+        selected_ids=["qwen3.8-27b"],
+        autostart_ids=["qwen3.8-27b"],
+        main_id="qwen3.8-27b",
+    )
+    plan = lm.default_plan(selected)
+    assert plan.install_ids == ("qwen3.8-27b",)
+    assert plan.main_id == "qwen3.8-27b"
+    assert [spec["model_key"] for spec in lm.boot_load_specs(selected, plan, env={})] == ["qwen3.8-27b"]
 
 
 def test_boot_load_specs_default_order(registry):
-    """The shipped Qwen default is emitted for boot loading."""
+    """No model is emitted for boot loading by the shipped defaults."""
     plan = lm.default_plan(registry)
     specs = lm.boot_load_specs(registry, plan, env={})
-    assert [spec["model_key"] for spec in specs] == ["qwen3.8-27b"]
+    assert specs == []
 
 
 def test_boot_load_specs_follows_switch_var(registry):
     """A switch var loads the on-demand main model without a keep-on peer."""
-    plan = lm.default_plan(registry)
+    plan = lm.build_plan(
+        registry, install_ids=["qwen3.8-27b"], keep_on_ids=[], main_id="qwen3.8-27b"
+    )
     specs = lm.boot_load_specs(registry, plan, env={"LMSTUDIO_USE_QWEN3_8_27B": "1"})
     assert [spec["model_key"] for spec in specs] == ["qwen3.8-27b"]
     assert specs[0]["gpu"] == "max"
@@ -312,8 +370,8 @@ def test_boot_load_specs_no_duplicate_when_main_is_keep_on(registry):
 
 
 def test_installable_ids_default_is_all_default_install(registry):
-    """With no selection, every default_install model is installable."""
-    assert lm.installable_ids(registry) == ["qwen3.8-27b"]
+    """With no selection, no optional model is installed by default."""
+    assert lm.installable_ids(registry) == []
 
 
 def test_installable_ids_honors_selection(registry):
@@ -344,18 +402,17 @@ def test_cli_download_list_honors_env(registry, capsys, monkeypatch):
     assert lines[0].split(lm.DOWNLOAD_FIELD_SEPARATOR)[0] == "vibethinker"
 
 
-def test_cli_download_list_default_lists_all(registry, capsys, monkeypatch):
-    """Without the env var, download-list lists every default_install model."""
+def test_cli_download_list_default_is_empty(registry, capsys, monkeypatch):
+    """Without an explicit selection, download-list does not include Qwen."""
     monkeypatch.delenv("LMSTUDIO_INSTALL_MODELS", raising=False)
     assert lm.main(["download-list", "--catalog", str(CATALOG)]) == 0
     lines = [line for line in capsys.readouterr().out.splitlines() if line.strip()]
-    ids = {line.split(lm.DOWNLOAD_FIELD_SEPARATOR)[0] for line in lines}
-    assert ids == {"qwen3.8-27b"}
+    assert lines == []
 
 
 def test_download_list_preserves_empty_catalog_source(registry, capsys, monkeypatch):
-    """Direct URLs retain an empty source field for the shell downloaders."""
-    monkeypatch.delenv("LMSTUDIO_INSTALL_MODELS", raising=False)
+    """An explicitly selected Qwen retains its empty source field for downloaders."""
+    monkeypatch.setenv("LMSTUDIO_INSTALL_MODELS", "qwen3.8-27b")
     assert lm.main(["download-list", "--catalog", str(CATALOG)]) == 0
     fields = capsys.readouterr().out.splitlines()[0].split(lm.DOWNLOAD_FIELD_SEPARATOR)
     assert len(fields) == 5
@@ -418,6 +475,8 @@ def test_exact_hugging_face_gguf_file_keeps_resumable_direct_download():
 def test_grouped_env_selection_replaces_startup_peer_but_ungrouped_is_additive(registry):
     registry["profiles"][0]["default_install"] = True
     registry["profiles"][0]["group"] = 1
+    registry["profiles"][1]["default_install"] = True
+    registry["profiles"][1]["default_main"] = True
     registry["profiles"][1]["group"] = 1
     registry["profiles"][0]["default_startup"] = True
     registry["profiles"][1]["default_startup"] = False
@@ -490,6 +549,8 @@ def test_custom_install_selection_preserves_models_and_applies_role(registry):
     main_catalog = lm.apply_install_selection(registry, **main_choice)
     assert lm.default_plan(main_catalog).main_id == "my-agent"
 
+    qwen = lm.find_profile(registry, "qwen3.8-27b")
+    qwen.update({"default_install": True, "default_main": True, "default_startup": True})
     keep_choice = lm.custom_install_selection(
         registry,
         {
@@ -516,7 +577,7 @@ def test_normalize_custom_profile_requires_name():
 
 
 def test_apply_selection_default_layout_roundtrips(registry):
-    """Selecting both shipped models with autostart reproduces default_plan."""
+    """Selecting Qwen with other models keeps Qwen as the intended main model."""
     customized = lm.apply_install_selection(
         registry,
         selected_ids=["vibethinker", "qwen3.8-27b"],

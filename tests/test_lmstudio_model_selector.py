@@ -72,19 +72,23 @@ def test_catalog_contains_expected_model_commands():
     assert qwen["offload_kv_cache_to_gpu"] is True
     assert qwen["gpu"] == "max"
     assert qwen["ttl"] == 0
-    assert profiles["qwen3.8-27b"]["default_startup"] is True
+    assert qwen["default_install"] is False
+    assert qwen["default_main"] is True
+    assert qwen["default_startup"] is False
+    assert qwen["boot_preload"] is False
     assert profiles["vibethinker"]["model_key"] == "vibethinker-1.5b"
     assert profiles["vibethinker"]["default_install"] is False
     assert profiles["vibethinker"]["default_keep_on"] is False
     assert profiles["vibethinker"]["default_startup"] is False
 
 
-def test_restore_uses_persisted_profile_then_boot_default():
-    """Restore uses the persisted profile, falling back to the boot default."""
+def test_restore_requires_persisted_or_explicit_profile_without_boot_default():
+    """Restore does not select Qwen when the optional profile is not a default."""
     profiles = MOD.load_profiles(CATALOG)
     with tempfile.TemporaryDirectory() as td:
         state_file = Path(td) / "selected-model"
-        assert MOD.selected_profile(profiles, None, state_file)["id"] == "qwen3.8-27b"
+        with pytest.raises(ValueError, match="no model profile is selected"):
+            MOD.selected_profile(profiles, None, state_file)
         state_file.write_text("qwen3.8-27b\n", encoding="utf-8")
         assert MOD.selected_profile(profiles, None, state_file)["id"] == "qwen3.8-27b"
 
