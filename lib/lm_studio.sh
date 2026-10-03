@@ -433,6 +433,40 @@ with open(sys.argv[1], encoding="utf-8") as handle:
             print("\t".join((cmd, profile["id"])))
 PY
 )
+
+  while IFS=$'\t' read -r command_name profile_id; do
+    [ -n "$command_name" ] || continue
+    case "$command_name" in
+      */*|.|..) continue ;;
+    esac
+    if run_as_target python3 - "$bin_dir/$command_name" "$bin_dir" "$profile_id" <<'PY'
+import sys
+from pathlib import Path
+
+path, bin_dir, profile_id = map(Path, sys.argv[1:])
+expected = (
+    "#!/usr/bin/env bash\n"
+    f"# Switch the active LM Studio main model to {profile_id}.\n"
+    f'exec "{bin_dir}/lmstudio-model" "{profile_id}" "$@"\n'
+)
+try:
+    matches = path.read_text(encoding="utf-8") == expected
+except OSError:
+    matches = False
+raise SystemExit(0 if matches else 1)
+PY
+    then
+      run_as_target rm -f "$bin_dir/$command_name"
+    fi
+  done < <(python3 - "$catalog" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as handle:
+    for profile in json.load(handle)["profiles"]:
+        cmd = profile.get("command")
+        if cmd and (not profile.get("default_install") or profile.get("default_keep_on")):
+            print("\t".join((cmd, profile["id"])))
+PY
+)
 }
 
 # install_models — component entry: assets, per-model selection, downloads, and
