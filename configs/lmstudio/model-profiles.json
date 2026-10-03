@@ -1,5 +1,5 @@
 {
-  "schema_version": 14,
+  "schema_version": 15,
   "main_env_var": "LMSTUDIO_MAIN_MODEL",
   "documentation": {
     "lms_load": "https://lmstudio.ai/docs/cli/models (lms load)",
@@ -24,7 +24,8 @@
     "default_keep_on": "Kept loaded at all times (not part of the switchable main slot).",
     "default_main": "The default active main model and the target of LMSTUDIO_MAIN_MODEL.",
     "default_startup": "Autoloaded into memory at boot. When omitted, falls back to default_keep_on || default_main. Set false to ship a model installed-but-idle while keeping it runtime-switchable via its switch_env_var.",
-    "startup_policy_schema": "Optional schema that introduced a safety-sensitive startup default. Older installed catalogs adopt the shipped default_startup once; choices made at or after this schema remain preserved."
+    "install_policy_schema": "Optional schema that introduced an install/main default. Older installed catalogs adopt the shipped install, keep-on, and main choices once; choices made at or after this schema remain preserved.",
+    "startup_policy_schema": "Optional schema that introduced a startup default. Older installed catalogs adopt the shipped default_startup once; choices made at or after this schema remain preserved."
   },
   "profiles": [
     {
@@ -54,7 +55,7 @@
       "id": "qwen3.8-27b",
       "command": "qwen3.8-27b",
       "description": "Qwen3.8-27B (Unsloth Dynamic 3.0 UD-Q3_K_XL) — 96K GPU-KV agentic coder",
-      "boot_preload": true,
+      "boot_preload": false,
       "model_key": "qwen3.8-27b",
       "load_key": "qwen3.8-27b@q3_k_xl",
       "download_url": "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/4ca720788d1e01f1bff70c033e0d0028fd02e502/Qwen3.8-27B-UD-Q3_K_XL.gguf?download=true",
@@ -76,11 +77,12 @@
       "identifier": "qwen3.8-27b",
       "yes": true,
       "switch_env_var": "LMSTUDIO_USE_QWEN3_8_27B",
-      "default_install": true,
+      "default_install": false,
       "default_keep_on": false,
       "default_main": true,
-      "default_startup": true,
-      "startup_policy_schema": 10
+      "default_startup": false,
+      "install_policy_schema": 15,
+      "startup_policy_schema": 15
     }
   ]
 }
