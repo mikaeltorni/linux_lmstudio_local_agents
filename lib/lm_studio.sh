@@ -22,6 +22,53 @@ lmla_target_config_dir() { printf '%s\n' "$TARGET_HOME/.config/lmstudio-local-ag
 lmla_target_catalog() { printf '%s\n' "$(lmla_target_config_dir)/model-profiles.json"; }
 lmla_bin_dir() { printf '%s\n' "$TARGET_HOME/.local/bin"; }
 
+# Build lmstudio-models in the source checkout.
+# run_as_target rewrites HOME, which hides an existing rustup toolchain, so the
+# invoker's cargo is preferred. Rust is bootstrapped into TARGET_HOME only when
+# cargo is not already on PATH.
+lmla_build_models_cli() {
+  if [ -n "${LMLA_MODELS_CLI:-}" ] && [ -x "$LMLA_MODELS_CLI" ]; then
+    return 0
+  fi
+  if command -v cargo >/dev/null 2>&1; then
+    local cargo_bin cargo_home rustup_home
+    cargo_bin="$(command -v cargo)"
+    cargo_home="$(cd "$(dirname "$cargo_bin")/.." && pwd)"
+    rustup_home="$(dirname "$cargo_home")/.rustup"
+    env CARGO_HOME="${CARGO_HOME:-$cargo_home}" RUSTUP_HOME="${RUSTUP_HOME:-$rustup_home}" \
+      cargo build --manifest-path "$LMLA_DIR/Cargo.toml" --locked --release
+    return
+  fi
+  local build_path bootstrap
+  build_path="$TARGET_HOME/.cargo/bin:$PATH"
+  if ! run_as_target env PATH="$build_path" CARGO_HOME="$TARGET_HOME/.cargo" \
+      RUSTUP_HOME="$TARGET_HOME/.rustup" sh -c 'command -v cargo >/dev/null'; then
+    bootstrap=$(mktemp)
+    curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs -o "$bootstrap"
+    chmod 644 "$bootstrap"
+    if ! run_as_target env CARGO_HOME="$TARGET_HOME/.cargo" RUSTUP_HOME="$TARGET_HOME/.rustup" \
+        sh "$bootstrap" -y --profile minimal --no-modify-path; then
+      rm -f "$bootstrap"
+      return 1
+    fi
+    rm -f "$bootstrap"
+  fi
+  run_as_target env PATH="$build_path" CARGO_HOME="$TARGET_HOME/.cargo" \
+    RUSTUP_HOME="$TARGET_HOME/.rustup" \
+    cargo build --manifest-path "$LMLA_DIR/Cargo.toml" --locked --release
+}
+
+lmla_models_cli() {
+  if [ -n "${LMLA_MODELS_CLI:-}" ]; then
+    printf '%s\n' "$LMLA_MODELS_CLI"
+    return
+  fi
+  if [ ! -x "$LMLA_DIR/target/release/lmstudio-models" ]; then
+    lmla_build_models_cli || return 1
+  fi
+  printf '%s\n' "$LMLA_DIR/target/release/lmstudio-models"
+}
+
 # install_lm_studio_app — install the LM Studio application (root only).
 install_lm_studio_app() {
   local version="${LM_STUDIO_VERSION:-0.4.21-2}"
@@ -149,6 +196,7 @@ lmla_install_assets() {
   config_dir="$(lmla_target_config_dir)"
   bin_dir="$(lmla_bin_dir)"
   catalog_dst="$(lmla_target_catalog)"
+  lmla_build_models_cli || return 1
   run_as_target mkdir -p "$config_dir" "$bin_dir"
   local asset
   for asset in defaults.sh defaults.py; do
@@ -158,7 +206,7 @@ lmla_install_assets() {
     local upgraded_catalog
     upgraded_catalog="$(mktemp)"
     rm -f "$upgraded_catalog"
-    run_as_target python3 "$LMLA_DIR/scripts/lmstudio_models.py" \
+    run_as_target "$(lmla_models_cli)" \
       upgrade-catalog --catalog "$catalog_dst" --shipped-catalog "$LMLA_CONFIG_DIR/model-profiles.json" \
       | run_as_target tee "$upgraded_catalog" >/dev/null
     run_as_target install -D -m 0644 "$upgraded_catalog" "$catalog_dst"
@@ -167,7 +215,7 @@ lmla_install_assets() {
     run_as_target install -D -m 0644 "$LMLA_CONFIG_DIR/model-profiles.json" "$catalog_dst"
   fi
   run_as_target install -D -m 0644 "$LMLA_DIR/scripts/lmla_logging_utils.py" "$bin_dir/lmla_logging_utils.py"
-  run_as_target install -D -m 0755 "$LMLA_DIR/scripts/lmstudio_models.py" "$bin_dir/lmstudio-models"
+  run_as_target install -D -m 0755 "$(lmla_models_cli)" "$bin_dir/lmstudio-models"
   run_as_target install -D -m 0755 "$LMLA_DIR/scripts/lmstudio_model_selector.py" "$bin_dir/lmstudio-model"
   run_as_target install -D -m 0755 "$LMLA_DIR/scripts/lmstudio_sdk_loader.mjs" "$bin_dir/lmstudio-sdk-loader.mjs"
   run_as_target install -D -m 0755 "$LMLA_CONFIG_DIR/lmstudio-boot.sh" "$bin_dir/lmstudio-boot.sh"
@@ -264,7 +312,7 @@ lmla_custom_selection_from_env() {
   if [[ ${LMSTUDIO_CUSTOM_MODEL_SWITCH_ENV_VAR+x} ]]; then
     args+=(--switch-env-var "$LMSTUDIO_CUSTOM_MODEL_SWITCH_ENV_VAR")
   fi
-  python3 "$LMLA_DIR/scripts/lmstudio_models.py" "${args[@]}"
+  "$(lmla_models_cli)" "${args[@]}"
 }
 
 # lmla_run_install_menu — run the interactive per-model selection menu on the
@@ -316,7 +364,7 @@ lmla_write_selected_catalog_from() {
   fi
   run_as_target mkdir -p "$(dirname "$catalog_dst")"
   printf '%s' "$selection" \
-    | python3 "$LMLA_DIR/scripts/lmstudio_models.py" apply-selection \
+    | "$(lmla_models_cli)" apply-selection \
         --catalog "$read_catalog" \
     | run_as_target tee "$catalog_dst" >/dev/null
   if [ -n "$tmp_catalog" ]; then
@@ -366,7 +414,7 @@ lmla_download_models() {
       run_as_target bash -c 'printf "%s  %s\n" "$1" "$2" | sha256sum --check --status' _ "$sha256" "$partial"
     fi
     run_as_target mv "$partial" "$model_file"
-  done < <(python3 "$LMLA_DIR/scripts/lmstudio_models.py" download-list --catalog "$catalog")
+  done < <("$(lmla_models_cli)" download-list --catalog "$catalog")
 }
 
 # lmla_install_model_download_service — install the resumable background download
