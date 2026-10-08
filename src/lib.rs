@@ -12,6 +12,9 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use url::Url;
 
+pub mod menu;
+pub mod switcher;
+
 const TRUTHY: &[&str] = &["1", "true", "yes", "y", "on"];
 const DEFAULT_MAIN_ENV_VAR: &str = "LMSTUDIO_MAIN_MODEL";
 const BOOT_FIELDS: &[&str] = &[
@@ -438,7 +441,7 @@ fn json_bool(value: Option<&Value>) -> bool {
     }
 }
 
-fn autostarts_by_default(profile: &Value) -> bool {
+pub(crate) fn autostarts_by_default(profile: &Value) -> bool {
     if profile.get("default_startup").is_some() {
         return json_bool(profile.get("default_startup"));
     }
@@ -670,7 +673,7 @@ fn switch_env_var_for(model_id: &str) -> String {
     format!("LMSTUDIO_USE_{suffix}")
 }
 
-fn custom_profile_from_source(source: &str) -> Result<Value, String> {
+pub(crate) fn custom_profile_from_source(source: &str) -> Result<Value, String> {
     let raw = source.trim();
     if raw.is_empty() {
         return Err("enter a Hugging Face URL or owner/model@quant".into());
@@ -727,7 +730,7 @@ fn custom_profile_from_source(source: &str) -> Result<Value, String> {
     Ok(profile)
 }
 
-fn normalize_custom_profile(spec: &Value) -> Result<Value, String> {
+pub(crate) fn normalize_custom_profile(spec: &Value) -> Result<Value, String> {
     let raw_id = spec.get("id").and_then(Value::as_str).filter(|value| !value.is_empty())
         .or_else(|| spec.get("name").and_then(Value::as_str))
         .unwrap_or("");

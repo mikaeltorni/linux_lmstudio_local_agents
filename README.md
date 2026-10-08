@@ -157,6 +157,7 @@ set the switch variable to an empty string.
 
 - `lmstudio-model <id>\|--restore` — switch the active GPU-resident model and
   persist the choice (used by the boot service and the per-model switch vars).
+- `lmstudio-install-menu` reads the model checklist and writes the selection JSON. `lmstudio-model PROFILE` switches the loaded model and prints its model key.
 - `lmstudio-snippets` is the Rust catalog helper for selection payloads, switch-command lists, and boot load-key resolution.
 - `lmstudio-models` is the Rust registry command (`Cargo.toml`, `src/`). It
   prints active-main, keep-on, boot-load, download-list, default-plan,

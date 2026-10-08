@@ -217,7 +217,8 @@ lmla_install_assets() {
   run_as_target install -D -m 0644 "$LMLA_DIR/scripts/lmla_logging_utils.py" "$bin_dir/lmla_logging_utils.py"
   run_as_target install -D -m 0755 "$(lmla_models_cli)" "$bin_dir/lmstudio-models"
   run_as_target install -D -m 0755 "$(lmla_snippets)" "$bin_dir/lmstudio-snippets"
-  run_as_target install -D -m 0755 "$LMLA_DIR/scripts/lmstudio_model_selector.py" "$bin_dir/lmstudio-model"
+  run_as_target install -D -m 0755 "$LMLA_DIR/target/release/lmstudio-model" "$bin_dir/lmstudio-model"
+  run_as_target install -D -m 0755 "$LMLA_DIR/target/release/lmstudio-install-menu" "$bin_dir/lmstudio-install-menu"
   run_as_target install -D -m 0755 "$LMLA_DIR/scripts/lmstudio_sdk_loader.mjs" "$bin_dir/lmstudio-sdk-loader.mjs"
   run_as_target install -D -m 0755 "$LMLA_CONFIG_DIR/lmstudio-boot.sh" "$bin_dir/lmstudio-boot.sh"
 }
@@ -275,7 +276,7 @@ lmla_run_install_menu() {
   out="$(mktemp)"
   menu_catalog="$(lmla_target_catalog)"
   [ -f "$menu_catalog" ] || menu_catalog="$LMLA_CONFIG_DIR/model-profiles.json"
-  python3 "$LMLA_DIR/scripts/lmstudio_install_menu.py" \
+  "$LMLA_DIR/target/release/lmstudio-install-menu" \
     --catalog "$menu_catalog" --out "$out" \
     <>/dev/tty >/dev/tty 2>&1 || true
   cat "$out"

@@ -12,6 +12,14 @@ path = "src/main.rs"
 name = "lmstudio-snippets"
 path = "src/bin/lmstudio-snippets.rs"
 
+[[bin]]
+name = "lmstudio-install-menu"
+path = "src/bin/lmstudio-install-menu.rs"
+
+[[bin]]
+name = "lmstudio-model"
+path = "src/bin/lmstudio-model.rs"
+
 [dependencies]
 regex = "1"
 serde_json = { version = "1", features = ["preserve_order"] }
