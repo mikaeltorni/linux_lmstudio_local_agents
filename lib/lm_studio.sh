@@ -216,6 +216,7 @@ lmla_install_assets() {
   fi
   run_as_target install -D -m 0644 "$LMLA_DIR/scripts/lmla_logging_utils.py" "$bin_dir/lmla_logging_utils.py"
   run_as_target install -D -m 0755 "$(lmla_models_cli)" "$bin_dir/lmstudio-models"
+  run_as_target install -D -m 0755 "$(lmla_snippets)" "$bin_dir/lmstudio-snippets"
   run_as_target install -D -m 0755 "$LMLA_DIR/scripts/lmstudio_model_selector.py" "$bin_dir/lmstudio-model"
   run_as_target install -D -m 0755 "$LMLA_DIR/scripts/lmstudio_sdk_loader.mjs" "$bin_dir/lmstudio-sdk-loader.mjs"
   run_as_target install -D -m 0755 "$LMLA_CONFIG_DIR/lmstudio-boot.sh" "$bin_dir/lmstudio-boot.sh"
@@ -225,22 +226,15 @@ lmla_install_assets() {
 # model ids (the LMSTUDIO_INSTALL_MODELS consumer path, e.g. linux_programming_setup
 # requesting only vibethinker). Autostart follows each model's shipped
 # default_keep_on/default_main flags so a consumer subset boots like the default.
+lmla_snippets() {
+  if [ ! -x "$LMLA_DIR/target/release/lmstudio-snippets" ]; then
+    lmla_build_models_cli || return 1
+  fi
+  printf '%s\n' "$LMLA_DIR/target/release/lmstudio-snippets"
+}
+
 lmla_selection_from_ids() {
-  python3 - "$LMLA_CONFIG_DIR/model-profiles.json" "$1" <<'PY'
-import json, sys
-def autostarts(p):
-    # Explicit default_startup supports installed-but-idle profiles; otherwise
-    # keep-on/main models autostart.
-    if "default_startup" in p:
-        return bool(p.get("default_startup"))
-    return bool(p.get("default_keep_on") or p.get("default_main"))
-registry = json.load(open(sys.argv[1], encoding="utf-8"))
-wanted = {t for t in sys.argv[2].replace(",", " ").split() if t}
-selected = [p["id"] for p in registry["profiles"] if p["id"] in wanted]
-autostart = [p["id"] for p in registry["profiles"]
-             if p["id"] in wanted and autostarts(p)]
-print(json.dumps({"selected_ids": selected, "autostart_ids": autostart}))
-PY
+  "$(lmla_snippets)" selection-from-ids "$LMLA_CONFIG_DIR/model-profiles.json" "$1"
 }
 
 # lmla_additive_selection_from_ids — build a selection payload by adding model
@@ -251,48 +245,7 @@ lmla_additive_selection_from_ids() {
   local existing_catalog="$1" requested_ids="$2"
   local requested_main="${3:-}"
   local base_catalog="$LMLA_CONFIG_DIR/model-profiles.json"
-  python3 - "$base_catalog" "$existing_catalog" "$requested_ids" "$requested_main" <<'PY'
-import json, sys
-from pathlib import Path
-
-def autostarts(p):
-    # Explicit default_startup supports installed-but-idle profiles; otherwise
-    # keep-on/main models autostart.
-    if "default_startup" in p:
-        return bool(p.get("default_startup"))
-    return bool(p.get("default_keep_on") or p.get("default_main"))
-
-base = json.load(open(sys.argv[1], encoding="utf-8"))
-existing_path = Path(sys.argv[2])
-existing = json.load(open(existing_path, encoding="utf-8")) if existing_path.exists() else base
-wanted = {t for t in sys.argv[3].replace(",", " ").split() if t}
-requested_main = sys.argv[4].strip()
-selected = []
-autostart = []
-main_id = None
-for profile in existing.get("profiles", []):
-    pid = profile["id"]
-    if profile.get("default_install") or pid in wanted:
-        selected.append(pid)
-    if autostarts(profile):
-        autostart.append(pid)
-    if profile.get("default_main"):
-        main_id = pid
-for profile in base.get("profiles", []):
-    pid = profile["id"]
-    if pid in wanted and pid not in selected:
-        selected.append(pid)
-    if pid in wanted and autostarts(profile) and pid not in autostart:
-        autostart.append(pid)
-for profile in base.get("profiles", []):
-    pid = profile["id"]
-    if pid in selected and profile.get("default_main"):
-        main_id = pid
-        break
-if requested_main and requested_main in selected:
-    main_id = requested_main
-print(json.dumps({"selected_ids": selected, "autostart_ids": autostart, "main_id": main_id}))
-PY
+  "$(lmla_snippets)" additive-selection "$base_catalog" "$existing_catalog" "$requested_ids" "$requested_main"
 }
 
 # lmla_custom_selection_from_env — build an additive selection for a custom
@@ -471,50 +424,18 @@ lmla_install_switch_commands() {
 exec "$bin_dir/lmstudio-model" "$profile_id" "\$@"
 EOF
     run_as_target chmod 0755 "$bin_dir/$command_name"
-  done < <(python3 - "$catalog" <<'PY'
-import json, sys
-with open(sys.argv[1], encoding="utf-8") as handle:
-    for profile in json.load(handle)["profiles"]:
-        cmd = profile.get("command")
-        # Only installed, switchable (non keep-on) models get a switch command.
-        if cmd and profile.get("default_install") and not profile.get("default_keep_on"):
-            print("\t".join((cmd, profile["id"])))
-PY
-)
+  done < <("$(lmla_snippets)" switch-commands "$catalog")
 
   while IFS=$'\t' read -r command_name profile_id; do
     [ -n "$command_name" ] || continue
     case "$command_name" in
       */*|.|..) continue ;;
     esac
-    if run_as_target python3 - "$bin_dir/$command_name" "$bin_dir" "$profile_id" <<'PY'
-import sys
-from pathlib import Path
-
-path, bin_dir, profile_id = map(Path, sys.argv[1:])
-expected = (
-    "#!/usr/bin/env bash\n"
-    f"# Switch the active LM Studio main model to {profile_id}.\n"
-    f'exec "{bin_dir}/lmstudio-model" "{profile_id}" "$@"\n'
-)
-try:
-    matches = path.read_text(encoding="utf-8") == expected
-except OSError:
-    matches = False
-raise SystemExit(0 if matches else 1)
-PY
-    then
+    expected=$(printf '%s\n' '#!/usr/bin/env bash' "# Switch the active LM Studio main model to ${profile_id}." "exec \"${bin_dir}/lmstudio-model\" \"${profile_id}\" \"\$@\"")
+    if run_as_target cmp -s "$bin_dir/$command_name" <(printf '%s\n' "$expected"); then
       run_as_target rm -f "$bin_dir/$command_name"
     fi
-  done < <(python3 - "$catalog" <<'PY'
-import json, sys
-with open(sys.argv[1], encoding="utf-8") as handle:
-    for profile in json.load(handle)["profiles"]:
-        cmd = profile.get("command")
-        if cmd and (not profile.get("default_install") or profile.get("default_keep_on")):
-            print("\t".join((cmd, profile["id"])))
-PY
-)
+  done < <("$(lmla_snippets)" stale-commands "$catalog")
 }
 
 # install_models — component entry: assets, per-model selection, downloads, and
