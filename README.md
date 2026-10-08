@@ -157,9 +157,11 @@ set the switch variable to an empty string.
 
 - `lmstudio-model <id>\|--restore` — switch the active GPU-resident model and
   persist the choice (used by the boot service and the per-model switch vars).
-- The model registry and resolution logic — including per-model install/autostart
-  selection and custom-model normalization — live in
-  [`scripts/lmstudio_models.py`](scripts/lmstudio_models.py) and are unit-tested.
+- `lmstudio-models` is the Rust registry command (`Cargo.toml`, `src/`). It
+  prints active-main, keep-on, boot-load, download-list, default-plan,
+  apply-selection, custom-selection, profile-from-source, and upgrade-catalog.
+  [`scripts/lmstudio_models.py`](scripts/lmstudio_models.py) remains for the
+  install menu and the Python unit tests.
 - The interactive per-model install menu lives in
   [`scripts/lmstudio_install_menu.py`](scripts/lmstudio_install_menu.py); its
   selection state is unit-tested with scripted input.

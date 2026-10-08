@@ -16,6 +16,7 @@ Thumbs.db
 # Build output
 dist/
 build/
+/target/
 
 *.log
 .log/
