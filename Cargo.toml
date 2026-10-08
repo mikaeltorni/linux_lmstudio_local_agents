@@ -8,6 +8,10 @@ description = "LM Studio model registry resolver"
 name = "lmstudio-models"
 path = "src/main.rs"
 
+[[bin]]
+name = "lmstudio-snippets"
+path = "src/bin/lmstudio-snippets.rs"
+
 [dependencies]
 regex = "1"
 serde_json = { version = "1", features = ["preserve_order"] }

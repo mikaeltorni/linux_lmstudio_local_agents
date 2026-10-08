@@ -107,19 +107,7 @@ start_lmstudio_server() {
 
 resolve_load_key() {
   local desired="$1" model_path="${2:-}"
-  "$LMS_CLI" ls --json 2>/dev/null | python3 -c '
-import json, sys
-desired, model_path = sys.argv[1:3]
-items = json.load(sys.stdin)
-for item in items:
-    if item.get("modelKey") == desired:
-        print(item["modelKey"])
-        raise SystemExit(0)
-for item in items:
-    if model_path and (item.get("path") == model_path or item.get("indexedModelIdentifier") == model_path):
-        print(item["modelKey"])
-        raise SystemExit(0)
-' "$desired" "$model_path"
+  "$LMS_CLI" ls --json 2>/dev/null | "$(dirname "$MODELS_PY")/lmstudio-snippets" resolve-load-key "$desired" "$model_path"
 }
 
 restart_lmstudio_daemon
