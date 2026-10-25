@@ -34,7 +34,7 @@ _spec.loader.exec_module(lmstudio_models)
 
 _shared_path = Path(os.environ.get("ISC_REPEATABLE_FIELDS_PY", ""))
 if not _shared_path.is_file():
-    _shared_path = Path(__file__).resolve().parents[2] / "linux_installation_scripts_functions" / "repeatable_fields.py"
+    _shared_path = Path(__file__).resolve().parents[1] / ".installer-support" / "repeatable_fields.py"
 _rows_spec = importlib.util.spec_from_file_location("isc_repeatable_fields", _shared_path)
 if not _rows_spec or not _rows_spec.loader:
     raise RuntimeError("shared repeatable_fields.py is unavailable")

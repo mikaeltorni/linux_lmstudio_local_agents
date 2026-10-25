@@ -34,33 +34,31 @@ detect_models() { return 1; }
 detect_lm_studio_app() { return 1; }
 configure_models() { :; }
 report_sudo_required() { :; }
-component_main "$@" >/dev/null 2>&1 || true
+component_main "$@"
 """
 
 
 def run_probe(tmp_path: Path, *args: str) -> list[str]:
-    """Run the component runtime with stubs and return the entry points it ran.
+    """Run the public component runtime with isolated installation stubs.
 
-    Args:
-        tmp_path: pytest temporary directory for the marker file.
-        *args: selection flags forwarded to component_main (e.g. "--default").
-
-    Returns:
-        The stub names recorded, in execution order.
+    Parameters: tmp_path - temporary state directory; args - public selection flags.
+    Returns: installed stub names in execution order.
     """
-    marker = tmp_path / "marker.txt"
-    marker.write_text("")
-    functions_dir = ROOT_DIR.parent / "linux_installation_scripts_functions"
-    subprocess.run(
-        ["bash", "-c", PROBE, "probe", str(ROOT_DIR), str(marker), *args],
-        cwd=ROOT_DIR,
-        text=True,
-        capture_output=True,
-        check=False,
-        env={"PATH": "/usr/bin:/bin", "HOME": str(tmp_path),
-             "ISC_FUNCTIONS_DIR": str(functions_dir)},
+    print(f'tmp_path={tmp_path} args={args}')
+    marker = tmp_path / 'marker.txt'
+    marker.write_text('')
+    functions_dir = ROOT_DIR / '.installer-support'
+    completed = subprocess.run(
+        ['bash', '-c', PROBE, 'probe', str(ROOT_DIR), str(marker), *args],
+        cwd=ROOT_DIR, text=True, capture_output=True,
+        env={'PATH':'/usr/bin:/bin', 'HOME':str(tmp_path),
+             'ISC_FUNCTIONS_DIR':str(functions_dir)},
     )
-    return marker.read_text().split()
+    assert completed.returncode == 0, (completed.stdout, completed.stderr)
+    result = marker.read_text().split()
+    print(result)
+    return result
+
 
 
 def test_core_installs_even_when_nothing_is_selected(tmp_path):
