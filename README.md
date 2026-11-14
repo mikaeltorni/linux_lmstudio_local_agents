@@ -114,8 +114,8 @@ git clone https://github.com/mikaeltorni/linux_lmstudio_local_agents.git
 cd linux_lmstudio_local_agents
 bash install.sh                 # interactive component menu, then per-model menu
 bash install.sh --default       # non-interactive: core app/service, no models
-bash install.sh --select lm_studio_app,serve,models   # app/service plus model selector; choose Qwen to opt in
-bash install.sh --select serve  # core serving only, no model downloads
+bash install.sh --select models  # core plus model selector; choose Qwen to opt in
+bash install.sh --select ""      # core serving only, no optional components
 ```
 
 Installing the LM Studio application itself writes to `/opt/lm-studio` and
@@ -133,14 +133,14 @@ cannot leave a false version marker or an empty `/opt/lm-studio`.
 
 | id | description | default | role |
 |---|---|---|---|
-| `lm_studio_app` | LM Studio AppImage GUI (root) | on | Applications |
-| `serve` | serve.env, boot script, and `lmstudio-serve.service` user service | on | Serving |
+| `lm_studio_app` | GUI autostart selection and app refresh (app is installed by the core) | on | Applications |
 | `models` | Choose models to install + autostart, or add your own (interactive) | off | optional |
 
 `models` is default-off so a default or unattended install does not download or
-register any LLM models. Select it in the menu (or pass `--select
-lm_studio_app,serve,models`) when model installation is wanted; leave it off for
-core serving only.
+register any LLM models. Select it in the menu or pass `--select models` when
+model installation is wanted; leave it off for core serving only. The core
+installs `serve.env`, the boot script, and `lmstudio-serve.service` independently
+of optional component selection.
 
 The LM Studio GUI is available through `[S]` on the `lm_studio_app` row in the
 master installer. It defaults off because `lmstudio-serve.service` provides
