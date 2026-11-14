@@ -162,11 +162,11 @@ set the switch variable to an empty string.
 - `lmstudio-models` is the Rust registry command (`Cargo.toml`, `src/`). It
   prints active-main, keep-on, boot-load, download-list, default-plan,
   apply-selection, custom-selection, profile-from-source, and upgrade-catalog.
-  [`scripts/lmstudio_models.py`](scripts/lmstudio_models.py) remains for the
-  install menu and the Python unit tests.
-- The interactive per-model install menu lives in
-  [`scripts/lmstudio_install_menu.py`](scripts/lmstudio_install_menu.py); its
-  selection state is unit-tested with scripted input.
+  [`scripts/lmstudio_models.py`](scripts/lmstudio_models.py) remains as a
+  tested Python implementation and a Rust parity reference.
+- The installed interactive menu uses [`src/menu.rs`](src/menu.rs) and
+  [`src/bin/lmstudio-install-menu.rs`](src/bin/lmstudio-install-menu.rs). The
+  retained Python menu and selector also have their own tests.
 
 ## Detect, reconfigure, and uninstall
 

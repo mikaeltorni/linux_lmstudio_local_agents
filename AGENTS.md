@@ -11,17 +11,16 @@ for local model serving.
 - `configs/lmstudio/model-profiles.json` — the model registry (the single source
   of truth for model keys, download URLs, sha256, serve flags, and the
   `switch_env_var`/`default_keep_on`/`default_main` install fields).
-- `scripts/lmstudio_models.py` — pure, unit-tested resolution logic (default
-  plan, explicit plan, runtime active-model resolution, env rendering). Keep it
-  side-effect free so it stays testable; do all I/O in the installer.
-- `scripts/lmstudio_model_selector.py` — `lmstudio-model` CLI that switches the
-  GPU-resident model via `lms`.
-- `scripts/lmstudio_install_menu.py` — interactive install-time menu for choosing
-  which models to install/autostart and adding user-supplied models. Emits a
-  selection that `lmstudio_models.apply_install_selection` renders into a
-  customized catalog; keep the selection state pure/testable, do TTY I/O in the
-  wrapper. The core (`lm_studio_app` + `serve`) installs and serves regardless of
-  any model choice; `models` is the optional, fully customizable layer.
+- `src/lib.rs` and `src/bin/lmstudio-model.rs` — registry resolution and the
+  `lmstudio-model` CLI that switches the GPU-resident model via `lms`.
+- `src/menu.rs` and `src/bin/lmstudio-install-menu.rs` — the interactive
+  install-time model menu and selection state. Keep selection logic pure and
+  testable, with TTY I/O in the wrapper. The core (`lm_studio_app` + `serve`)
+  installs and serves regardless of model choice; `models` is the optional,
+  fully customizable layer.
+- `scripts/lmstudio_models.py`, `scripts/lmstudio_model_selector.py`, and
+  `scripts/lmstudio_install_menu.py` — retained Python implementations with
+  tests; the registry implementation also serves as a Rust parity reference.
 - `lib/lm_studio.sh` — LM Studio install + serve.env + boot script + user
   service management.
 
