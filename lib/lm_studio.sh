@@ -26,18 +26,20 @@ lmla_bin_dir() { printf '%s\n' "$TARGET_HOME/.local/bin"; }
 # run_as_target rewrites HOME, which hides an existing rustup toolchain, so the
 # invoker's cargo is preferred. Rust is bootstrapped into TARGET_HOME only when
 # cargo is not already on PATH.
+# Parameters: none; reads the installer's source path and Cargo environment.
+# Returns: zero for an available model CLI or successful build, otherwise the failure status.
 lmla_build_models_cli() {
+  printf 'parameters=none\n' >&2
+  local status=0
   if [ -n "${LMLA_MODELS_CLI:-}" ] && [ -x "$LMLA_MODELS_CLI" ]; then
+    printf '0\n' >&2
     return 0
   fi
   if command -v cargo >/dev/null 2>&1; then
-    local cargo_bin cargo_home rustup_home
-    cargo_bin="$(command -v cargo)"
-    cargo_home="$(cd "$(dirname "$cargo_bin")/.." && pwd)"
-    rustup_home="$(dirname "$cargo_home")/.rustup"
-    env CARGO_HOME="${CARGO_HOME:-$cargo_home}" RUSTUP_HOME="${RUSTUP_HOME:-$rustup_home}" \
-      cargo build --manifest-path "$LMLA_DIR/Cargo.toml" --locked --release
-    return
+    env CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}" RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}" \
+      cargo build --manifest-path "$LMLA_DIR/Cargo.toml" --locked --release || status=$?
+    printf '%s\n' "$status" >&2
+    return "$status"
   fi
   local build_path bootstrap
   build_path="$TARGET_HOME/.cargo/bin:$PATH"
@@ -49,13 +51,16 @@ lmla_build_models_cli() {
     if ! run_as_target env CARGO_HOME="$TARGET_HOME/.cargo" RUSTUP_HOME="$TARGET_HOME/.rustup" \
         sh "$bootstrap" -y --profile minimal --no-modify-path; then
       rm -f "$bootstrap"
+      printf '1\n' >&2
       return 1
     fi
     rm -f "$bootstrap"
   fi
   run_as_target env PATH="$build_path" CARGO_HOME="$TARGET_HOME/.cargo" \
     RUSTUP_HOME="$TARGET_HOME/.rustup" \
-    cargo build --manifest-path "$LMLA_DIR/Cargo.toml" --locked --release
+    cargo build --manifest-path "$LMLA_DIR/Cargo.toml" --locked --release || status=$?
+  printf '%s\n' "$status" >&2
+  return "$status"
 }
 
 lmla_models_cli() {

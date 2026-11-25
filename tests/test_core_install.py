@@ -10,10 +10,43 @@ These tests pin the core to the framework's ISC_CORE hook, which runs first and
 unconditionally.
 """
 
+import os
 import subprocess
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
+
+
+def test_standalone_configuration_uses_user_cargo_cache(tmp_path):
+    """Check the cache path when Cargo is already installed outside the home.
+
+    Parameters: tmp_path - isolated home, simulated system toolchain and build record.
+    Returns: None after both cache-path cases pass.
+    """
+    print(f"tmp_path={tmp_path}")
+    home = tmp_path / "home"
+    cargo = tmp_path / "system" / "bin" / "cargo"
+    record = tmp_path / "build-environment"
+    home.mkdir()
+    cargo.parent.mkdir(parents=True)
+    cargo.write_text(
+        '#!/bin/sh\nprintf "%s\\n" "$CARGO_HOME" "$RUSTUP_HOME" > "$CARGO_PROBE"\nexit 73\n'
+    )
+    cargo.chmod(0o755)
+    environment = dict(os.environ, HOME=str(home), PATH=f"{cargo.parent}:/usr/bin:/bin",
+                       CARGO_PROBE=str(record), LMLA_MODEL_SELECTION_JSON='{"selected_ids":[],"autostart_ids":[]}')
+    for variable in ("CARGO_HOME", "RUSTUP_HOME", "LMLA_MODELS_CLI"):
+        environment.pop(variable, None)
+    overrides = {"CARGO_HOME": str(tmp_path / "explicit-cargo"), "RUSTUP_HOME": str(tmp_path / "explicit-rustup")}
+    for configured, expected in (({}, [str(home / ".cargo"), str(home / ".rustup")]),
+                                 (overrides, list(overrides.values()))):
+        result = subprocess.run(
+            ["bash", str(ROOT_DIR / "install.sh"), "--configure-component", "models"],
+            env={**environment, **configured}, text=True, capture_output=True, check=False,
+        )
+        assert result.returncode != 0, result.stderr
+        assert record.read_text().splitlines() == expected, configured
+    print(None)
 
 # Drives the real shared component runtime with every install function stubbed,
 # so the test records which entry points a given selection would invoke without
